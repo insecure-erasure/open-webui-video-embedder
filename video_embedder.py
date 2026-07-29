@@ -320,8 +320,6 @@ class Tools:
     ) -> str:
         """
         Generate embed HTML from one or more video page URLs.
-        Output the resulting HTML code block in your response so the user
-        can see the embedded video.
 
         :param urls: One or more video page URLs
         """
