@@ -319,11 +319,12 @@ class Tools:
         __event_emitter__=None,
     ) -> str:
         """
-        Extract embed HTML from one or more video URLs.
-        Returns a code block you must output in your response.
+        Generate embed HTML from one or more video page URLs.
+        Uses yt-dlp to extract video info and builds an iframe or video tag
+        with the best available quality. Output the resulting HTML code block
+        in your response so the user can see the embedded video.
 
-        :param urls: One or more direct video page URLs
-        :return: HTML code block to display
+        :param urls: One or more video page URLs
         """
         if not urls:
             return "❌ No URLs provided."
