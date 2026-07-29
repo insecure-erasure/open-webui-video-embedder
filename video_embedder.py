@@ -107,8 +107,10 @@ EMBED_MAP.update(IFRAME_WEBPAGE_PATTERNS)
 #  Utilities
 # ──────────────────────────────────────────────
 
-def _run_ytdlp(args: list[str]) -> dict | None:
-    """Run yt-dlp and return parsed JSON."""
+def _run_ytdlp(args: list[str]) -> tuple[dict | None, str | None]:
+    """Run yt-dlp and return (data, error).
+    Returns (dict, None) on success, (None, str) on failure.
+    """
     cmd = ["yt-dlp", "--dump-json"] + args
     try:
         result = subprocess.run(
@@ -118,18 +120,22 @@ def _run_ytdlp(args: list[str]) -> dict | None:
             timeout=60,
         )
         if result.returncode != 0:
-            logger.warning(f"yt-dlp error: {result.stderr[:500]}")
-            return None
-        return json.loads(result.stdout)
+            msg = result.stderr[:500].strip()
+            logger.warning(f"yt-dlp error: {msg}")
+            return None, msg
+        return json.loads(result.stdout), None
     except subprocess.TimeoutExpired:
         logger.warning("yt-dlp timed out")
-        return None
+        return None, "yt-dlp timed out"
     except json.JSONDecodeError:
         logger.warning("yt-dlp returned invalid JSON")
-        return None
+        return None, "yt-dlp returned invalid JSON"
     except FileNotFoundError:
         logger.warning("yt-dlp not found")
-        return None
+        return None, "yt-dlp is not installed"
+    except Exception as e:
+        logger.warning(f"yt-dlp unexpected error: {e}")
+        return None, str(e)
 
 
 def _format_duration(seconds: int) -> str:
@@ -244,9 +250,9 @@ def _process_url(url: str) -> dict:
       - metadata: dict with video info
       - error: message if failed
     """
-    data = _run_ytdlp([url])
+    data, err = _run_ytdlp([url])
     if data is None:
-        return {"error": f"Could not extract info from URL. Is it supported by yt-dlp?"}
+        return {"error": err or "Could not extract info from URL"}
 
     extractor = data.get("extractor", "")
     video_id = data.get("id", "")

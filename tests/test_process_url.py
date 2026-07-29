@@ -127,7 +127,7 @@ def assert_video_html(html: str, *, video_url: str, is_hls: bool = False):
 
 class TestIframePath:
     def test_returns_iframe_html(self, iframe_data):
-        with patch("video_embedder._run_ytdlp", return_value=iframe_data):
+        with patch("video_embedder._run_ytdlp", return_value=(iframe_data, None)):
             result = _process_url("https://redgifs.com/watch/reflectingwellinformedgordonsetter")
 
         assert "error" not in result
@@ -138,7 +138,7 @@ class TestIframePath:
         )
 
     def test_metadata_has_title_and_urls(self, iframe_data):
-        with patch("video_embedder._run_ytdlp", return_value=iframe_data):
+        with patch("video_embedder._run_ytdlp", return_value=(iframe_data, None)):
             result = _process_url("https://redgifs.com/watch/reflectingwellinformedgordonsetter")
 
         meta = result["metadata"]
@@ -151,7 +151,7 @@ class TestIframePath:
 
 class TestDirectMp4Path:
     def test_returns_video_html(self, direct_mp4_data):
-        with patch("video_embedder._run_ytdlp", return_value=direct_mp4_data):
+        with patch("video_embedder._run_ytdlp", return_value=(direct_mp4_data, None)):
             result = _process_url("https://vimeo.com/1084537")
 
         assert "error" not in result
@@ -163,7 +163,7 @@ class TestDirectMp4Path:
 
 class TestHlsPath:
     def test_returns_hls_video_html(self, hls_only_data):
-        with patch("video_embedder._run_ytdlp", return_value=hls_only_data):
+        with patch("video_embedder._run_ytdlp", return_value=(hls_only_data, None)):
             result = _process_url("https://www.dailymotion.com/video/x9yfz8u")
 
         assert "error" not in result
@@ -178,7 +178,7 @@ class TestHlsPath:
 
 class TestWebmPath:
     def test_returns_video_html(self, direct_webm_data):
-        with patch("video_embedder._run_ytdlp", return_value=direct_webm_data):
+        with patch("video_embedder._run_ytdlp", return_value=(direct_webm_data, None)):
             result = _process_url("https://www.dailymotion.com/video/x24fho2")
 
         assert "error" not in result
@@ -194,7 +194,7 @@ class TestWebmPath:
 
 class TestNoUsableFormats:
     def test_returns_empty_embed_html(self, no_usable_formats_data):
-        with patch("video_embedder._run_ytdlp", return_value=no_usable_formats_data):
+        with patch("video_embedder._run_ytdlp", return_value=(no_usable_formats_data, None)):
             result = _process_url("https://example.com/weird987")
 
         assert "error" not in result
@@ -205,8 +205,8 @@ class TestNoUsableFormats:
 
 class TestErrorPath:
     def test_returns_error(self):
-        with patch("video_embedder._run_ytdlp", return_value=None):
+        with patch("video_embedder._run_ytdlp", return_value=(None, "HTTP Error 410: Gone")):
             result = _process_url("https://example.com/broken")
 
         assert "error" in result
-        assert "Could not extract" in result["error"]
+        assert "410" in result["error"]
