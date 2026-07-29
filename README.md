@@ -99,22 +99,6 @@ The test suite covers:
 - **No usable formats** — when only mhtml containers exist
 - **Error handling** — when yt-dlp fails
 
-### Project structure
-
-```
-video-embedder/
-├── video_embedder.py   # Main tool code
-├── templates/           # Customizable HTML templates
-│   ├── iframe.html
-│   ├── video.html
-│   └── hls.html
-├── tests/               # Test suite
-│   ├── test_process_url.py
-│   ├── test_html.py
-│   └── test_utils.py
-└── README.md
-```
-
 ### Valve configuration
 
 The tool exposes one configurable valve:
