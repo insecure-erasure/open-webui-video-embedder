@@ -342,15 +342,19 @@ class Tools:
 
         await self._emit_status(__event_emitter__, "All videos extracted", done=True)
 
-        errors = []
         embeds = []
         for i, r in enumerate(results, 1):
             if "error" in r:
-                return f"❌ Video {i}: {r['error']}"
+                await self._emit_status(__event_emitter__, f"⚠️ Skipped video {i}: {r['error']}")
+                continue
             embed_html = r.get("embed_html", "")
             if not embed_html:
-                return f"❌ Video {i}: Could not generate embed for this URL."
+                await self._emit_status(__event_emitter__, f"⚠️ Skipped video {i}: no playable format found")
+                continue
             embeds.append(embed_html)
+
+        if not embeds:
+            return "❌ No videos could be embedded."
 
         combined = _combine_html(embeds)
         return _build_embed_code(combined)
