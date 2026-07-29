@@ -11,66 +11,16 @@ licence: MIT
 import asyncio
 import json
 import logging
-import os
-from pathlib import Path
+import math
 
-from pydantic import BaseModel, Field
+from html.parser import HTMLParser
+from pydantic import BaseModel
 from yt_dlp import YoutubeDL
 
 logger = logging.getLogger(__name__)
 
 
-# ──────────────────────────────────────────────
-#  Assets directory resolution
-# ──────────────────────────────────────────────
 
-# Open WebUI does NOT expose internal variables to the tool (no TOOL_ID, no TOOL_NAME).
-# The tool_id is known in load_tool_module_by_id() but never passed to the
-# module namespace via exec() [plugin.py:82-129].
-# Also __file__ points to a temp file (/tmp/...), not the real location.
-#
-# Strategy:
-#   - DATA_DIR: env var that Open WebUI exposes [env.py:97]
-#   - TOOL_NAME: hardcoded constant for this tool
-#   - Combined: {DATA_DIR}/cache/tools/{TOOL_NAME}/
-#   - Generic env var override: TOOL_ASSETS_DIR
-
-
-# Tool name (for cache paths and internal references)
-TOOL_NAME = "video-embedder"
-
-
-def _resolve_assets_dir() -> Path:
-    """Resolve the assets directory for this tool.
-
-    Resolution order:
-      1. TOOL_ASSETS_DIR env var (explicit override)
-      2. Open WebUI standard path: $DATA_DIR/cache/tools/$TOOL_NAME/
-      3. Script directory (local development fallback)
-    """
-    # 1. Explicit override via generic env var
-    env = os.environ.get("TOOL_ASSETS_DIR")
-    if env:
-        p = Path(env)
-        if p.exists():
-            logger.debug(f"Assets dir from env: {p}")
-            return p
-        logger.warning(f"TOOL_ASSETS_DIR set but not found: {p}")
-
-    # 2. Open WebUI canonical path
-    data_dir = os.environ.get("DATA_DIR", "/app/backend/data")
-    owui_cache = Path(data_dir) / "cache" / "tools" / TOOL_NAME
-    if owui_cache.exists():
-        logger.debug(f"Assets dir from Open WebUI cache: {owui_cache}")
-        return owui_cache
-
-    # 3. Fallback: alongside the script (local dev)
-    script_dir = Path(__file__).parent.resolve()
-    logger.debug(f"Assets dir from script location: {script_dir}")
-    return script_dir
-
-
-ASSETS_DIR = _resolve_assets_dir()
 
 
 # ──────────────────────────────────────────────
@@ -194,29 +144,14 @@ _HTML_HLS_TEMPLATE = """<body style="margin:0;background:#0d0d0d;width:100vw;hei
 </body>"""
 
 
-def _load_template(name: str) -> str:
-    """
-    Load a template from ASSETS_DIR if the file exists,
-    otherwise return the default inline template.
-    """
-    tpl_path = ASSETS_DIR / "templates" / name
-    if tpl_path.exists():
-        logger.debug(f"Loading template from file: {tpl_path}")
-        return tpl_path.read_text(encoding="utf-8")
-    inline_map = {
-        "iframe.html": _HTML_IFRAME_TEMPLATE,
-        "video.html": _HTML_VIDEO_TEMPLATE,
-        "hls.html": _HTML_HLS_TEMPLATE,
-    }
-    return inline_map.get(name, "")
+
 
 
 def _build_iframe_html(embed_url: str, title: str = "", width: int | None = None, height: int | None = None) -> str:
     """Generate iframe embed HTML."""
     safe_title = title.replace('"', "&quot;")
     ar_w, ar_h, ar = _calc_aspect_ratio(width, height)
-    tpl = _load_template("iframe.html")
-    return (tpl.replace("{embed_url}", embed_url)
+    return (_HTML_IFRAME_TEMPLATE.replace("{embed_url}", embed_url)
             .replace("{safe_title}", safe_title)
             .replace("{ar_w}", str(ar_w))
             .replace("{ar_h}", str(ar_h))
@@ -225,10 +160,7 @@ def _build_iframe_html(embed_url: str, title: str = "", width: int | None = None
 
 def _build_video_html(video_url: str, title: str = "", m3u8: bool = False, width: int | None = None, height: int | None = None) -> str:
     """Generate <video> embed HTML for direct MP4 or HLS."""
-    if m3u8:
-        tpl = _load_template("hls.html")
-    else:
-        tpl = _load_template("video.html")
+    tpl = _HTML_HLS_TEMPLATE if m3u8 else _HTML_VIDEO_TEMPLATE
     ar_w, ar_h, ar = _calc_aspect_ratio(width, height)
     return (tpl.replace("{video_url}", video_url)
             .replace("{ar_w}", str(ar_w))
@@ -291,10 +223,6 @@ def _process_url(url: str) -> dict:
     }
 
     return {"embed_html": embed_html, "metadata": metadata}
-
-
-import math
-from html.parser import HTMLParser
 
 
 def _calc_aspect_ratio(width: int | None, height: int | None) -> tuple[int, int, str]:
