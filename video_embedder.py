@@ -12,10 +12,10 @@ import asyncio
 import json
 import logging
 import os
-import subprocess
 from pathlib import Path
 
 from pydantic import BaseModel, Field
+from yt_dlp import YoutubeDL
 
 logger = logging.getLogger(__name__)
 
@@ -111,31 +111,15 @@ def _run_ytdlp(args: list[str]) -> tuple[dict | None, str | None]:
     """Run yt-dlp and return (data, error).
     Returns (dict, None) on success, (None, str) on failure.
     """
-    cmd = ["yt-dlp", "--dump-json"] + args
+    url = args[0] if args else ""
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        if result.returncode != 0:
-            msg = result.stderr[:500].strip()
-            logger.warning(f"yt-dlp error: {msg}")
-            return None, msg
-        return json.loads(result.stdout), None
-    except subprocess.TimeoutExpired:
-        logger.warning("yt-dlp timed out")
-        return None, "yt-dlp timed out"
-    except json.JSONDecodeError:
-        logger.warning("yt-dlp returned invalid JSON")
-        return None, "yt-dlp returned invalid JSON"
-    except FileNotFoundError:
-        logger.warning("yt-dlp not found")
-        return None, "yt-dlp is not installed"
+        with YoutubeDL({"quiet": True, "no_warnings": True}) as ydl:
+            data = ydl.extract_info(url, download=False)
+            return data, None
     except Exception as e:
-        logger.warning(f"yt-dlp unexpected error: {e}")
-        return None, str(e)
+        msg = str(e).strip()
+        logger.warning(f"yt-dlp error: {msg}")
+        return None, msg
 
 
 def _format_duration(seconds: int) -> str:
@@ -302,16 +286,10 @@ def _build_embed_code(embed_html: str) -> str:
 
 class Tools:
     class Valves(BaseModel):
-        ytdlp_timeout: int = Field(
-            default=60,
-            description="Timeout in seconds for each yt-dlp call",
-        )
+        pass
 
     class UserValves(BaseModel):
         pass
-
-    def __init__(self):
-        self.valves = self.Valves()
 
     async def _emit_status(self, __event_emitter__, description: str, done: bool = False):
         if __event_emitter__:
