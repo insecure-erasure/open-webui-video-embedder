@@ -320,9 +320,8 @@ class Tools:
     ) -> str:
         """
         Generate embed HTML from one or more video page URLs.
-        Uses yt-dlp to extract video info and builds an iframe or video tag
-        with the best available quality. Output the resulting HTML code block
-        in your response so the user can see the embedded video.
+        Output the resulting HTML code block in your response so the user
+        can see the embedded video.
 
         :param urls: One or more video page URLs
         """
