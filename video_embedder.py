@@ -275,6 +275,23 @@ def _process_url(url: str) -> dict:
     return {"embed_html": embed_html, "metadata": metadata}
 
 
+import re
+
+
+def _combine_html(html_list: list[str]) -> str:
+    """Combine multiple embed HTML fragments into a single HTML document."""
+    if len(html_list) == 1:
+        return html_list[0]
+    divs = []
+    for html in html_list:
+        m = re.search(r"<body[^>]*>(.*?)</body>", html, re.DOTALL)
+        if m:
+            divs.append(m.group(1))
+    return f"""<body style="margin:0;background:#0d0d0d;width:100vw;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:16px 0;box-sizing:border-box">
+{"\n".join(divs)}
+</body>"""
+
+
 def _build_embed_code(embed_html: str) -> str:
     """Wrap embed HTML in an instruction for the LLM."""
     return f"Output this HTML code block:\n\n```html\n{embed_html}\n```"
@@ -325,15 +342,15 @@ class Tools:
 
         await self._emit_status(__event_emitter__, "All videos extracted", done=True)
 
-        parts = []
+        errors = []
+        embeds = []
         for i, r in enumerate(results, 1):
             if "error" in r:
-                parts.append(f"❌ Video {i}: {r['error']}")
-            else:
-                embed_html = r["embed_html"]
-                if not embed_html:
-                    parts.append(f"❌ Video {i}: Could not generate embed for this URL.")
-                else:
-                    parts.append(_build_embed_code(embed_html))
+                return f"❌ Video {i}: {r['error']}"
+            embed_html = r.get("embed_html", "")
+            if not embed_html:
+                return f"❌ Video {i}: Could not generate embed for this URL."
+            embeds.append(embed_html)
 
-        return "\n\n---\n\n".join(parts)
+        combined = _combine_html(embeds)
+        return _build_embed_code(combined)
