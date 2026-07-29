@@ -413,57 +413,27 @@ class Tools:
                 {"type": "status", "data": {"description": description, "done": done}}
             )
 
-    async def embed_video(
-        self,
-        url: str,
-        __event_emitter__=None,
-    ) -> str:
-        """
-        Extract the direct video URL from any site supported by yt-dlp
-        and generate embed-ready HTML.
-
-        Supports: RedGIFs, xHamster, YouTube, PornHub, XVideos, RedTube, YouPorn,
-        SpankBang, EPORNER, and 1800+ more sites.
-
-        :param url: Video URL to embed (e.g. https://www.redgifs.com/watch/...)
-        :return: HTML with embedded player + video metadata
-        """
-        await self._emit_status(__event_emitter__, f"Extracting video from {url}...")
-
-        # Run yt-dlp in an executor to avoid blocking
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, _process_url, url)
-
-        await self._emit_status(__event_emitter__, "Video extracted", done=True)
-
-        return _format_single_result(result)
-
     async def embed_videos(
         self,
-        urls: str,
+        urls: list[str],
         __event_emitter__=None,
     ) -> str:
         """
-        Batch version: extract and embed multiple video URLs.
-        Each URL on a separate line.
+        Embed one or more video URLs. Accepts a list of direct video page URLs.
 
-        :param urls: Video URLs separated by newline, comma or semicolon
-        :return: HTML with all embedded players + metadata
+        :param urls: One or more video page URLs
+        :return: HTML players with metadata for each video
         """
-        # Parse URLs
-        raw = urls.replace(",", "\n").replace(";", "\n")
-        url_list = [u.strip() for u in raw.split("\n") if u.strip()]
-
-        if not url_list:
+        if not urls:
             return "❌ No URLs provided."
 
-        parts = [f"# 🎬 Video Embedder — {len(url_list)} video(s)\n"]
+        parts = [f"# 🎬 Video Embedder — {len(urls)} video(s)\n"]
         loop = asyncio.get_event_loop()
 
-        for i, url in enumerate(url_list, 1):
+        for i, url in enumerate(urls, 1):
             await self._emit_status(
                 __event_emitter__,
-                f"[{i}/{len(url_list)}] Extracting: {url[:80]}..."
+                f"[{i}/{len(urls)}] Extracting: {url[:80]}..."
             )
             result = await loop.run_in_executor(None, _process_url, url)
             parts.append(f"---\n\n### Video {i}\n\n{_format_single_result(result)}\n")
