@@ -12,12 +12,10 @@ import asyncio
 import json
 import logging
 import os
-import re
 import subprocess
 from pathlib import Path
-from typing import Optional
-from urllib.parse import urlparse
 
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -369,15 +367,13 @@ def _process_url(url: str) -> dict:
 
 
 def _format_single_result(result: dict) -> str:
-    """Format a single URL result as markdown + HTML."""
+    """Format a single URL result as markdown + HTML metadata (text only)."""
     if "error" in result:
         return f"❌ **Error:** {result['error']}"
 
     meta = result["metadata"]
     lines = [
         f"### 🎬 {meta['title']}",
-        "",
-        result["embed_html"],
         "",
         _build_metadata_table(result["metadata"]),
         "",
@@ -387,6 +383,68 @@ def _format_single_result(result: dict) -> str:
             meta["extractor"]
         ),
     ]
+    return "\n".join(lines)
+
+
+def _build_players_html(results: list[dict]) -> str:
+    """Build a complete HTML document with all video players for rich UI embed."""
+    players = []
+    for r in results:
+        if "error" in r:
+            continue
+        embed = r.get("embed_html", "")
+        if embed:
+            players.append(f'<div class="player-item">{embed}</div>')
+
+    if not players:
+        return ""
+
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+  body {{ font-family: system-ui, sans-serif; padding: 8px; background: transparent; }}
+  .player-item {{ margin-bottom: 16px; }}
+  .player-item:last-child {{ margin-bottom: 0; }}
+</style>
+</head>
+<body>
+{"".join(players)}
+<script>
+  (function() {{
+    function rh() {{ var h = document.documentElement.scrollHeight; parent.postMessage({{ type: 'iframe:height', height: h }}, '*'); }}
+    window.addEventListener('load', rh);
+    new ResizeObserver(rh).observe(document.body);
+  }})();
+</script>
+</body>
+</html>"""
+
+
+def _build_context(results: list[dict]) -> str:
+    """Build text context for the LLM: metadata for each video, no raw HTML."""
+    lines = []
+    success_count = sum(1 for r in results if "error" not in r)
+    error_count = len(results) - success_count
+    summary = f"Video Embedder — {success_count} embedded"
+    if error_count:
+        summary += f", {error_count} failed"
+    lines.append(summary)
+
+    for i, r in enumerate(results, 1):
+        if "error" in r:
+            lines.append(f"Video {i}: ❌ Error — {r['error']}")
+        else:
+            meta = r["metadata"]
+            lines.append(
+                f"Video {i}: {meta['title']} ({meta['duration']}) — "
+                f"{meta['uploader']} — {meta['view_count']} views — {meta['resolution']}"
+            )
+            lines.append(f"  Original: {meta['webpage_url']}")
+            if meta["stream_url"]:
+                lines.append(f"  Stream: {meta['stream_url']}")
+
     return "\n".join(lines)
 
 
@@ -419,16 +477,17 @@ class Tools:
         __event_emitter__=None,
     ) -> str:
         """
-        Embed one or more video URLs. Accepts a list of direct video page URLs.
+        Embed one or more video URLs. Returns a rich HTML player that renders
+        inline in the chat, plus metadata context visible to the model.
 
-        :param urls: One or more video page URLs
-        :return: HTML players with metadata for each video
+        :param urls: One or more direct video page URLs
+        :return: Inline HTML player(s) with metadata
         """
         if not urls:
             return "❌ No URLs provided."
 
-        parts = [f"# 🎬 Video Embedder — {len(urls)} video(s)\n"]
         loop = asyncio.get_event_loop()
+        results = []
 
         for i, url in enumerate(urls, 1):
             await self._emit_status(
@@ -436,7 +495,18 @@ class Tools:
                 f"[{i}/{len(urls)}] Extracting: {url[:80]}..."
             )
             result = await loop.run_in_executor(None, _process_url, url)
-            parts.append(f"---\n\n### Video {i}\n\n{_format_single_result(result)}\n")
+            results.append(result)
 
         await self._emit_status(__event_emitter__, "All videos extracted", done=True)
-        return "\n".join(parts)
+
+        players_html = _build_players_html(results)
+        context = _build_context(results)
+
+        if not players_html:
+            # All failed — return plain text
+            return context
+
+        return HTMLResponse(
+            content=players_html,
+            headers={"Content-Disposition": "inline"},
+        ), context
