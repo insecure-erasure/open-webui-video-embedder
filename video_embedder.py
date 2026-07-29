@@ -29,6 +29,8 @@ logger = logging.getLogger(__name__)
 
 # Known embed URL patterns for sites whose CDNs lack CORS
 _EMBED_URLS = {
+    "youtube.com": lambda id: f"https://www.youtube.com/embed/{id}",
+    "youtu.be": lambda id: f"https://www.youtube.com/embed/{id}",
     "redgifs.com": lambda id: f"https://www.redgifs.com/ifr/{id}",
     "xvideos.com": lambda id: f"https://www.xvideos.com/embedframe/{id}",
 }
