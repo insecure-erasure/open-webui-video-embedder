@@ -170,21 +170,25 @@ def _get_best_direct_mp4(data: dict) -> str | None:
 # ──────────────────────────────────────────────
 
 # Default inline templates (always available)
+_AR_W = 16
+_AR_H = 9
+_AR = "16/9"
+
 _HTML_IFRAME_TEMPLATE = """<body style="margin:0;background:#0d0d0d;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center">
-<div style="width:100%;height:100%;max-width:calc((100vh*9)/16);max-height:calc((100vw*16)/9);aspect-ratio:9/16;border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.5)">
+<div style="width:100%;height:100%;max-width:calc(100vh*{ar_w}/{ar_h});max-height:calc(100vw*{ar_h}/{ar_w});aspect-ratio:{ar};border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.5)">
 <iframe src="{embed_url}" title="{safe_title}" allow="autoplay;fullscreen" allowfullscreen loading="lazy" style="width:100%;height:100%;border:0;background:#0d0d0d">
 </iframe>
 </div>
 </body>"""
 
 _HTML_VIDEO_TEMPLATE = """<body style="margin:0;background:#0d0d0d;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center">
-<div style="width:100%;height:100%;max-width:calc((100vh*9)/16);max-height:calc((100vw*16)/9);aspect-ratio:9/16;border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.5)">
+<div style="width:100%;height:100%;max-width:calc(100vh*{ar_w}/{ar_h});max-height:calc(100vw*{ar_h}/{ar_w});aspect-ratio:{ar};border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.5)">
 <video src="{video_url}" controls preload="metadata" playsinline style="width:100%;height:100%;border:0;background:#0d0d0d"></video>
 </div>
 </body>"""
 
 _HTML_HLS_TEMPLATE = """<body style="margin:0;background:#0d0d0d;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center">
-<div style="width:100%;height:100%;max-width:calc((100vh*9)/16);max-height:calc((100vw*16)/9);aspect-ratio:9/16;border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.5)">
+<div style="width:100%;height:100%;max-width:calc(100vh*{ar_w}/{ar_h});max-height:calc(100vw*{ar_h}/{ar_w});aspect-ratio:{ar};border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.5)">
 <video src="{video_url}" controls preload="metadata" style="width:100%;height:100%;border:0;background:#0d0d0d"></video>
 </div>
 </body>"""
@@ -207,20 +211,29 @@ def _load_template(name: str) -> str:
     return inline_map.get(name, "")
 
 
-def _build_iframe_html(embed_url: str, title: str = "") -> str:
+def _build_iframe_html(embed_url: str, title: str = "", width: int | None = None, height: int | None = None) -> str:
     """Generate iframe embed HTML."""
     safe_title = title.replace('"', "&quot;")
+    ar_w, ar_h, ar = _calc_aspect_ratio(width, height)
     tpl = _load_template("iframe.html")
-    return tpl.replace("{embed_url}", embed_url).replace("{safe_title}", safe_title)
+    return (tpl.replace("{embed_url}", embed_url)
+            .replace("{safe_title}", safe_title)
+            .replace("{ar_w}", str(ar_w))
+            .replace("{ar_h}", str(ar_h))
+            .replace("{ar}", ar))
 
 
-def _build_video_html(video_url: str, title: str = "", m3u8: bool = False) -> str:
+def _build_video_html(video_url: str, title: str = "", m3u8: bool = False, width: int | None = None, height: int | None = None) -> str:
     """Generate <video> embed HTML for direct MP4 or HLS."""
     if m3u8:
         tpl = _load_template("hls.html")
     else:
         tpl = _load_template("video.html")
-    return tpl.replace("{video_url}", video_url)
+    ar_w, ar_h, ar = _calc_aspect_ratio(width, height)
+    return (tpl.replace("{video_url}", video_url)
+            .replace("{ar_w}", str(ar_w))
+            .replace("{ar_h}", str(ar_h))
+            .replace("{ar}", ar))
 
 
 # ──────────────────────────────────────────────
@@ -246,25 +259,30 @@ def _process_url(url: str) -> dict:
     embed_html = ""
     stream_url = None
 
+    w = data.get("width")
+    h = data.get("height")
+
     if extractor in EMBED_MAP:
         iframe_url = EMBED_MAP[extractor](video_id)
-        embed_html = _build_iframe_html(iframe_url, title)
+        embed_html = _build_iframe_html(iframe_url, title, width=w, height=h)
         stream_url = _get_best_direct_mp4(data) or data.get("url")
 
     else:
         direct_mp4 = _get_best_direct_mp4(data)
         if direct_mp4:
-            embed_html = _build_video_html(direct_mp4, title)
+            embed_html = _build_video_html(direct_mp4, title, width=w, height=h)
             stream_url = direct_mp4
         else:
             best = _get_best_format(data)
             if best:
                 url_best = best.get("url", "")
                 is_m3u8 = "m3u8" in (best.get("protocol", "") or "") or ".m3u8" in url_best
-                embed_html = _build_video_html(url_best, title, m3u8=is_m3u8)
+                embed_html = _build_video_html(url_best, title, m3u8=is_m3u8, width=w, height=h)
                 stream_url = url_best
             else:
                 embed_html = ""
+
+
 
     metadata = {
         "title": data.get("title", "?"),
@@ -275,57 +293,72 @@ def _process_url(url: str) -> dict:
     return {"embed_html": embed_html, "metadata": metadata}
 
 
+import math
 from html.parser import HTMLParser
 
 
-class _MediaTagFinder(HTMLParser):
-    """Extracts the first <iframe> or <video> tag from an HTML fragment."""
+def _calc_aspect_ratio(width: int | None, height: int | None) -> tuple[int, int, str]:
+    """Return (ar_w, ar_h, "ar_w/ar_h") from dimensions, defaults to 16/9."""
+    if width and height:
+        g = math.gcd(width, height)
+        ar_w = width // g
+        ar_h = height // g
+        return ar_w, ar_h, f"{ar_w}/{ar_h}"
+    return _AR_W, _AR_H, _AR
+
+
+class _BodyContentFinder(HTMLParser):
+    """Extract the content inside <body> from a full HTML document."""
     def __init__(self):
         super().__init__()
-        self.tag = None
+        self._in_body = False
         self._depth = 0
         self._parts = []
 
     def handle_starttag(self, tag, attrs):
-        if tag in ("iframe", "video"):
-            if self.tag is None:
-                self.tag = tag
-            if self._depth == 0 and self.tag == tag:
-                self._parts = [self.get_starttag_text()]
-            self._depth += 1
+        if tag == "body":
+            self._in_body = True
+            return
+        if self._in_body:
+            self._parts.append(self.get_starttag_text())
 
     def handle_endtag(self, tag):
-        if tag == self.tag:
-            self._depth -= 1
-            if self._depth == 0:
-                self._parts.append(f"</{tag}>")
+        if tag == "body":
+            self._in_body = False
+            return
+        if self._in_body:
+            self._parts.append(f"</{tag}>")
 
     def handle_data(self, data):
-        if self._depth > 0:
+        if self._in_body:
             self._parts.append(data)
 
+    def handle_startendtag(self, tag, attrs):
+        if self._in_body:
+            self._parts.append(self.get_starttag_text())
 
-def _extract_media_tag(html: str) -> str:
-    """Extract <iframe> or <video> element from a full HTML document."""
-    parser = _MediaTagFinder()
+
+def _extract_body_content(html: str) -> str:
+    """Return the HTML content inside <body> (the <div> with aspect-ratio)."""
+    parser = _BodyContentFinder()
     parser.feed(html)
-    return "".join(parser._parts) if parser.tag else ""
+    return "".join(parser._parts)
 
 
 def _combine_html(html_list: list[str]) -> str:
-    """Combine multiple embed HTML fragments into a single HTML document."""
+    """Combine multiple embed HTML fragments into a single HTML document.
+    Each embed keeps its own <div> with its specific aspect-ratio.
+    """
     if len(html_list) == 1:
         return html_list[0]
-    inner = []
+    divs = []
     for html in html_list:
-        tag = _extract_media_tag(html)
-        if tag:
-            inner.append(tag)
-    joined = "\n".join(inner)
-    return f"""<body style="margin:0;background:#0d0d0d;width:100vw;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px 0;box-sizing:border-box">
-<div style="width:100%;max-width:calc((100vh*9)/16);display:flex;flex-direction:column;gap:16px;border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.5)">
+        content = _extract_body_content(html)
+        if content:
+            divs.append(content)
+    joined = "\n".join(divs)
+    return f"""<body style="margin:0;background:#0d0d0d;width:100vw;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:16px 0;box-sizing:border-box">
 {joined}
-</div>
 </body>"""
 
 

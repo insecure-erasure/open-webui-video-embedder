@@ -14,8 +14,8 @@ class TestBuildIframeHtml:
         html = _build_iframe_html("https://example.com/embed/abc123")
         assert "iframe" in html
         assert "https://example.com/embed/abc123" in html
-        assert "aspect-ratio:9/16" in html
-        assert "max-width:calc((100vh*9)/16)" in html
+        assert "aspect-ratio:16/9" in html
+        assert "max-width:calc(100vh*16/9)" in html
         assert "width:100vw" in html
 
     def test_title_escaping(self):
@@ -36,7 +36,7 @@ class TestBuildVideoHtml:
         assert "https://cdn.example.com/video.mp4" in html
         assert "controls" in html
         assert "width:100vw" in html
-        assert "max-height:calc((100vw*16)/9)" in html
+        assert "max-height:calc(100vw*9/16)" in html
 
     def test_hls(self):
         html = _build_video_html("https://cdn.example.com/stream.m3u8", m3u8=True)
