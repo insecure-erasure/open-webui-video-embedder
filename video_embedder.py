@@ -124,24 +124,11 @@ _AR_W = 16
 _AR_H = 9
 _AR = "16/9"
 
-_HTML_IFRAME_TEMPLATE = """<body style="margin:0;background:#0d0d0d;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center">
-<div style="width:100%;height:100%;max-width:calc(100vh*{ar_w}/{ar_h});max-height:calc(100vw*{ar_h}/{ar_w});aspect-ratio:{ar};border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.5)">
-<iframe src="{embed_url}" title="{safe_title}" allow="autoplay;fullscreen" allowfullscreen loading="lazy" style="width:100%;height:100%;border:0;background:#0d0d0d">
-</iframe>
-</div>
-</body>"""
+_HTML_IFRAME_TEMPLATE = '<body style="margin:0;background:#0d0d0d;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center"><div style="width:100%;height:100%;max-width:calc(100vh*{ar_w}/{ar_h});max-height:calc(100vw*{ar_h}/{ar_w});aspect-ratio:{ar};border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.5)"><iframe src="{embed_url}" title="{safe_title}" allow="autoplay;fullscreen" allowfullscreen loading="lazy" style="width:100%;height:100%;border:0;background:#0d0d0d"></iframe></div></body>'
 
-_HTML_VIDEO_TEMPLATE = """<body style="margin:0;background:#0d0d0d;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center">
-<div style="width:100%;height:100%;max-width:calc(100vh*{ar_w}/{ar_h});max-height:calc(100vw*{ar_h}/{ar_w});aspect-ratio:{ar};border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.5)">
-<video src="{video_url}" controls preload="metadata" playsinline style="width:100%;height:100%;border:0;background:#0d0d0d"></video>
-</div>
-</body>"""
+_HTML_VIDEO_TEMPLATE = '<body style="margin:0;background:#0d0d0d;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center"><div style="width:100%;height:100%;max-width:calc(100vh*{ar_w}/{ar_h});max-height:calc(100vw*{ar_h}/{ar_w});aspect-ratio:{ar};border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.5)"><video src="{video_url}" controls preload="metadata" playsinline style="width:100%;height:100%;border:0;background:#0d0d0d"></video></div></body>'
 
-_HTML_HLS_TEMPLATE = """<body style="margin:0;background:#0d0d0d;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center">
-<div style="width:100%;height:100%;max-width:calc(100vh*{ar_w}/{ar_h});max-height:calc(100vw*{ar_h}/{ar_w});aspect-ratio:{ar};border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.5)">
-<video src="{video_url}" controls preload="metadata" style="width:100%;height:100%;border:0;background:#0d0d0d"></video>
-</div>
-</body>"""
+_HTML_HLS_TEMPLATE = '<body style="margin:0;background:#0d0d0d;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center"><div style="width:100%;height:100%;max-width:calc(100vh*{ar_w}/{ar_h});max-height:calc(100vw*{ar_h}/{ar_w});aspect-ratio:{ar};border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.5)"><video src="{video_url}" controls preload="metadata" style="width:100%;height:100%;border:0;background:#0d0d0d"></video></div></body>'
 
 
 
@@ -284,15 +271,13 @@ def _combine_html(html_list: list[str]) -> str:
         content = _extract_body_content(html)
         if content:
             divs.append(content)
-    joined = "\n".join(divs)
-    return f"""<body style="margin:0;background:#0d0d0d;width:100vw;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:16px 0;box-sizing:border-box">
-{joined}
-</body>"""
+    joined = "".join(divs)
+    return f'<body style="margin:0;background:#0d0d0d;width:100vw;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:16px 0;box-sizing:border-box">{joined}</body>'
 
 
 def _build_embed_code(embed_html: str) -> str:
     """Wrap embed HTML in an instruction for the LLM."""
-    return f"Output this HTML code block:\n\n```html\n{embed_html}\n```"
+    return f'Output this HTML exactly, without modifying it:\n\n```html\n{embed_html}\n```'
 
 
 # ──────────────────────────────────────────────

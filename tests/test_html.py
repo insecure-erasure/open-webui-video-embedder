@@ -53,7 +53,7 @@ class TestBuildVideoHtml:
 class TestBuildEmbedCode:
     def test_wraps_in_html_code_block(self):
         result = _build_embed_code('<body style="margin:0"><div>content</div></body>')
-        assert "Output this HTML code block:" in result
+        assert "Output this HTML exactly" in result
         assert "```html" in result
         assert "<body" in result
         assert "```" in result
