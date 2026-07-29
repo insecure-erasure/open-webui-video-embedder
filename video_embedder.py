@@ -326,6 +326,8 @@ class Tools:
     ) -> str:
         """
         Generate embed HTML from one or more video page URLs.
+        Pass the URL of the video page itself (e.g. the page you watch the video on),
+        not the direct CDN/MP4 link. This tool uses yt-dlp to extract metadata.
 
         :param urls: One or more video page URLs
         """
