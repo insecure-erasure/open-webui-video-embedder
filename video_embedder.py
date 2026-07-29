@@ -287,8 +287,9 @@ def _combine_html(html_list: list[str]) -> str:
         m = re.search(r"<body[^>]*>(.*?)</body>", html, re.DOTALL)
         if m:
             divs.append(m.group(1))
+    joined = "\n".join(divs)
     return f"""<body style="margin:0;background:#0d0d0d;width:100vw;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:16px 0;box-sizing:border-box">
-{"\n".join(divs)}
+{joined}
 </body>"""
 
 
