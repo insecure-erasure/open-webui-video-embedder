@@ -1,7 +1,7 @@
 """
 title: Video Embedder
 author: Insecure Erasure
-description: Extract direct video URLs from 1800+ sites via yt-dlp, returns embed-ready HTML. Supports RedGIFs, xHamster, YouTube, PornHub, XVideos and many more.
+description: Uses yt-dlp to extract video metadata from supported sites and returns embed-ready HTML.
 required_open_webui_version: 0.5.0
 requirements: yt-dlp
 version: 0.1.0

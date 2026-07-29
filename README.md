@@ -1,6 +1,6 @@
 # Video Embedder
 
-An [Open WebUI](https://openwebui.com/) tool that extracts video information from **1800+ websites** via `yt-dlp` and generates **ready-to-embed HTML** for display inside the chat interface. Supports direct MP4, HLS streams, and iframe embeds from popular platforms.
+An [Open WebUI](https://openwebui.com/) tool that uses `yt-dlp` to extract video metadata and generates **ready-to-embed HTML**. Supports direct MP4, HLS streams, and iframe embeds.
 
 ## How it works
 
