@@ -3,7 +3,7 @@
 All fixtures use real, existing video IDs from supported sites.
 
 Covers:
-  - Iframe path  (RedGifs — known extractor in EMBED_MAP)
+  - Iframe path  (sites with known embed URLs)
   - Direct MP4   (Vimeo — direct HTTPS MP4 formats)
   - HLS stream   (Dailymotion — only HLS/m3u8 formats)
   - Webm direct  (Dailymotion — webm format available)
@@ -28,6 +28,7 @@ def iframe_data():
         "extractor": "RedGifs",
         "title": "Bikini Micro Bikini SFW TikTok",
         "webpage_url": "https://redgifs.com/watch/reflectingwellinformedgordonsetter",
+        "webpage_url_domain": "redgifs.com",
         "url": "https://media.redgifs.com/ReflectingWellinformedGordonsetter.mp4",
         "duration": 8, "view_count": 339535,
         "uploader": "marilyn_merlot", "width": 1080, "height": 1920,
@@ -47,6 +48,7 @@ def direct_mp4_data():
         "id": "1084537", "extractor": "vimeo",
         "title": "Big Buck Bunny",
         "webpage_url": "https://vimeo.com/1084537",
+        "webpage_url_domain": "vimeo.com",
         "url": "https://player.vimeo.com/progressive_redirect/1084537/720p.mp4",
         "duration": 634,
         "formats": [
@@ -65,6 +67,7 @@ def hls_only_data():
         "id": "x9yfz8u", "extractor": "dailymotion",
         "title": "Big Buck Bunny | Official Blender Foundation Short Film (HD, 60fps)",
         "webpage_url": "https://www.dailymotion.com/video/x9yfz8u",
+        "webpage_url_domain": "dailymotion.com",
         "url": "https://vod3.cf.dmcdn.net/sec2(x9yfz8u)/video.m3u8",
         "duration": 634,
         "formats": [
@@ -83,6 +86,7 @@ def direct_webm_data():
         "id": "x24fho2", "extractor": "dailymotion",
         "title": "Big Buck Bunny - Blender Foundation",
         "webpage_url": "https://www.dailymotion.com/video/x24fho2",
+        "webpage_url_domain": "dailymotion.com",
         "url": "https://vod3.cf.dmcdn.net/sec2(x24fho2)/video.m3u8",
         "duration": 634,
         "formats": [
@@ -100,6 +104,7 @@ def no_usable_formats_data():
         "id": "weird987", "extractor": "generic",
         "title": "Some obscure stream",
         "webpage_url": "https://example.com/weird987",
+        "webpage_url_domain": "example.com",
         "url": None, "duration": None,
         "formats": [{"ext": "mhtml", "protocol": "mhtml", "height": 9999}],
     }

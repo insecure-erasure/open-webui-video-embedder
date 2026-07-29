@@ -24,33 +24,20 @@ logger = logging.getLogger(__name__)
 
 
 # ──────────────────────────────────────────────
-#  Extractor -> embed method mapping
+#  Generic embed URL construction
 # ──────────────────────────────────────────────
 
-# Sites known to lack CORS on their CDNs
-# requiring their own site iframe
-IFRAME_EXTRACTORS = {
-    "RedGifs": lambda id: f"https://www.redgifs.com/ifr/{id}",
-    "XHamster": lambda id: f"https://xhamster.com/embed/{id}",
-    "PornHub": lambda id: f"https://www.pornhub.com/embed/{id}",
-    "XVideos": lambda id: f"https://www.xvideos.com/embedframe/{id}",
-    "XHamsterEmbed": lambda id: f"https://xhamster.com/embed/{id}",
-    "RedTube": lambda id: f"https://www.redtube.com/embed/{id}",
-    "YouPorn": lambda id: f"https://www.youporn.com/embed/{id}",
-    "SpankBang": lambda id: f"https://spankbang.com/embed/{id}",
-    "EPORNER": lambda id: f"https://www.eporner.com/embed/{id}",
+# Known embed URL patterns for sites whose CDNs lack CORS
+_EMBED_URLS = {
+    "redgifs.com": lambda id: f"https://www.redgifs.com/ifr/{id}",
+    "xvideos.com": lambda id: f"https://www.xvideos.com/embedframe/{id}",
 }
 
-# Sites with known iframe URL patterns
-IFRAME_WEBPAGE_PATTERNS = {
-    "youtube": lambda id: f"https://www.youtube.com/embed/{id}",
-    "Youtube": lambda id: f"https://www.youtube.com/embed/{id}",
-}
 
-# Combined map
-EMBED_MAP = {}
-EMBED_MAP.update(IFRAME_EXTRACTORS)
-EMBED_MAP.update(IFRAME_WEBPAGE_PATTERNS)
+def _get_embed_url(extractor: str, video_id: str, webpage_url_domain: str | None) -> str | None:
+    """Return known embed URL for a site, or None."""
+    builder = _EMBED_URLS.get(webpage_url_domain or "")
+    return builder(video_id) if builder else None
 
 
 # ──────────────────────────────────────────────
@@ -181,11 +168,10 @@ def _process_url(url: str) -> dict:
     w = data.get("width")
     h = data.get("height")
 
-    if extractor in EMBED_MAP:
-        iframe_url = EMBED_MAP[extractor](video_id)
+    iframe_url = _get_embed_url(extractor, video_id, data.get("webpage_url_domain"))
+    if iframe_url:
         embed_html = _build_iframe_html(iframe_url, title, width=w, height=h)
         stream_url = _get_best_direct_mp4(data) or data.get("url")
-
     else:
         direct_mp4 = _get_best_direct_mp4(data)
         if direct_mp4:
