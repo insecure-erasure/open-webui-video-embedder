@@ -354,7 +354,8 @@ class Tools:
             embeds.append(embed_html)
 
         if not embeds:
-            return "❌ No videos could be embedded."
+            await self._emit_status(__event_emitter__, "❌ None of the videos could be embedded", done=True)
+            return "❌ None of the videos could be embedded."
 
         combined = _combine_html(embeds)
         return _build_embed_code(combined)
