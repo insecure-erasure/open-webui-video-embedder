@@ -15,7 +15,6 @@ import os
 import subprocess
 from pathlib import Path
 
-from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -75,7 +74,7 @@ ASSETS_DIR = _resolve_assets_dir()
 
 
 # ──────────────────────────────────────────────
-#  Extractor → embed method mapping
+#  Extractor -> embed method mapping
 # ──────────────────────────────────────────────
 
 # Sites known to lack CORS on their CDNs
@@ -142,22 +141,12 @@ def _format_duration(seconds: int) -> str:
     return f"{m}:{s:02d}"
 
 
-def _format_number(n: int) -> str:
-    """Format large numbers (1.2M, 43K, etc)."""
-    if n >= 1_000_000:
-        return f"{n/1_000_000:.1f}M"
-    if n >= 1_000:
-        return f"{n/1_000:.1f}K"
-    return str(n)
-
-
 def _get_best_format(data: dict) -> dict | None:
     """Return the best format (highest resolution, non-mhtml)."""
     formats = data.get("formats", [])
     if not formats:
         return None
 
-    # Prioritize direct MP4 over HLS
     best = None
     for f in formats:
         ext = f.get("ext", "")
@@ -166,7 +155,6 @@ def _get_best_format(data: dict) -> dict | None:
             continue
         height = f.get("height") or 0
         if best is None or height > (best.get("height") or 0):
-            # Prefer direct MP4 over HLS at same resolution
             if best and height == (best.get("height") or 0):
                 if ext == "mp4" and proto == "https":
                     best = f
@@ -187,57 +175,29 @@ def _get_best_direct_mp4(data: dict) -> str | None:
     return best["url"] if best else None
 
 
-def _get_duration_str(data: dict) -> str:
-    dur = data.get("duration")
-    if dur:
-        return _format_duration(int(dur))
-    return "?"
-
-
-def _get_view_count(data: dict) -> str:
-    vc = data.get("view_count")
-    if vc is not None:
-        return _format_number(int(vc))
-    return "?"
-
-
-def _get_uploader(data: dict) -> str:
-    up = data.get("uploader", data.get("channel", ""))
-    return up or "?"
-
-
-def _get_resolution_str(data: dict) -> str:
-    w = data.get("width")
-    h = data.get("height")
-    if w and h:
-        return f"{w}×{h}"
-    return "?"
-
-
 # ──────────────────────────────────────────────
 #  HTML Templates
 # ──────────────────────────────────────────────
 
 # Default inline templates (always available)
-_HTML_IFRAME_TEMPLATE = """<div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;max-width:100%;background:#000;border-radius:8px;margin:12px 0">
-  <iframe src="{embed_url}" title="{safe_title}"
-    style="position:absolute;top:0;left:0;width:100%;height:100%;border:none"
-    allow="autoplay; fullscreen" allowfullscreen loading="lazy">
-  </iframe>
-</div>"""
+_HTML_IFRAME_TEMPLATE = """<body style="margin:0;background:#0d0d0d;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center">
+<div style="width:100%;height:100%;max-width:calc((100vh*9)/16);max-height:calc((100vw*16)/9);aspect-ratio:9/16;border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.5)">
+<iframe src="{embed_url}" title="{safe_title}" allow="autoplay;fullscreen" allowfullscreen loading="lazy" style="width:100%;height:100%;border:0;background:#0d0d0d">
+</iframe>
+</div>
+</body>"""
 
-_HTML_VIDEO_TEMPLATE = """<div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;max-width:100%;background:#000;border-radius:8px;margin:12px 0">
-  <video controls style="position:absolute;top:0;left:0;width:100%;height:100%" preload="metadata" playsinline>
-    <source src="{video_url}" type="video/mp4">
-  </video>
-</div>"""
+_HTML_VIDEO_TEMPLATE = """<body style="margin:0;background:#0d0d0d;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center">
+<div style="width:100%;height:100%;max-width:calc((100vh*9)/16);max-height:calc((100vw*16)/9);aspect-ratio:9/16;border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.5)">
+<video src="{video_url}" controls preload="metadata" playsinline style="width:100%;height:100%;border:0;background:#0d0d0d"></video>
+</div>
+</body>"""
 
-_HTML_HLS_TEMPLATE = """<div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;max-width:100%;background:#000;border-radius:8px;margin:12px 0">
-  <video controls style="position:absolute;top:0;left:0;width:100%;height:100%" preload="metadata">
-    <source src="{video_url}" type="application/x-mpegURL">
-  </video>
-  <p style="color:#888;font-size:12px;text-align:center;margin:4px 0">⚠️ HLS stream — may require a compatible browser</p>
-</div>"""
+_HTML_HLS_TEMPLATE = """<body style="margin:0;background:#0d0d0d;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center">
+<div style="width:100%;height:100%;max-width:calc((100vh*9)/16);max-height:calc((100vw*16)/9);aspect-ratio:9/16;border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.5)">
+<video src="{video_url}" controls preload="metadata" style="width:100%;height:100%;border:0;background:#0d0d0d"></video>
+</div>
+</body>"""
 
 
 def _load_template(name: str) -> str:
@@ -249,7 +209,6 @@ def _load_template(name: str) -> str:
     if tpl_path.exists():
         logger.debug(f"Loading template from file: {tpl_path}")
         return tpl_path.read_text(encoding="utf-8")
-    # Fallback to inline
     inline_map = {
         "iframe.html": _HTML_IFRAME_TEMPLATE,
         "video.html": _HTML_VIDEO_TEMPLATE,
@@ -274,33 +233,6 @@ def _build_video_html(video_url: str, title: str = "", m3u8: bool = False) -> st
     return tpl.replace("{video_url}", video_url)
 
 
-def _build_metadata_table(data: dict) -> str:
-    """Build markdown metadata table."""
-    rows = [
-        ("Title", data.get("title", "?")),
-        ("Duration", data.get("duration", "?")),
-        ("Uploader", data.get("uploader", "?")),
-        ("Views", data.get("view_count", "?")),
-        ("Resolution", data.get("resolution", "?")),
-        ("Extractor", data.get("extractor", "?")),
-    ]
-    lines = ["| Field | Value |", "|---|---|"]
-    for label, value in rows:
-        lines.append(f"| **{label}** | {value} |")
-    return "\n".join(lines)
-
-
-def _build_link_row(webpage_url: str, stream_url: str | None, extractor: str) -> str:
-    """Build useful links: original page and direct stream."""
-    lines = []
-    if webpage_url:
-        lines.append(f"- **🔗 Original:** [{webpage_url}]({webpage_url})")
-    if stream_url:
-        if not any(ex in extractor for ex in ["youtube", "Youtube"]):
-            lines.append(f"- **📺 Stream:** `{stream_url}`")
-    return "\n".join(lines)
-
-
 # ──────────────────────────────────────────────
 #  Main embedding logic
 # ──────────────────────────────────────────────
@@ -312,7 +244,6 @@ def _process_url(url: str) -> dict:
       - metadata: dict with video info
       - error: message if failed
     """
-    # 1. Call yt-dlp
     data = _run_ytdlp([url])
     if data is None:
         return {"error": f"Could not extract info from URL. Is it supported by yt-dlp?"}
@@ -322,24 +253,20 @@ def _process_url(url: str) -> dict:
     title = data.get("title", "Video")
     webpage_url = data.get("webpage_url", url)
 
-    # 2. Determine embedding method
     embed_html = ""
     stream_url = None
 
     if extractor in EMBED_MAP:
-        # Use site iframe
         iframe_url = EMBED_MAP[extractor](video_id)
         embed_html = _build_iframe_html(iframe_url, title)
         stream_url = _get_best_direct_mp4(data) or data.get("url")
 
     else:
-        # Generic: try direct MP4
         direct_mp4 = _get_best_direct_mp4(data)
         if direct_mp4:
             embed_html = _build_video_html(direct_mp4, title)
             stream_url = direct_mp4
         else:
-            # Fallback: HLS or yt-dlp direct URL
             best = _get_best_format(data)
             if best:
                 url_best = best.get("url", "")
@@ -347,18 +274,10 @@ def _process_url(url: str) -> dict:
                 embed_html = _build_video_html(url_best, title, m3u8=is_m3u8)
                 stream_url = url_best
             else:
-                # Last resort: link to webpage
-                embed_html = f"⚠️ Could not generate embed. [Open video on web]({webpage_url})"
+                embed_html = ""
 
-    # 3. Build metadata
     metadata = {
-        "id": video_id,
-        "extractor": extractor,
         "title": data.get("title", "?"),
-        "duration": _get_duration_str(data),
-        "uploader": _get_uploader(data),
-        "view_count": _get_view_count(data),
-        "resolution": _get_resolution_str(data),
         "webpage_url": webpage_url,
         "stream_url": stream_url,
     }
@@ -366,86 +285,9 @@ def _process_url(url: str) -> dict:
     return {"embed_html": embed_html, "metadata": metadata}
 
 
-def _format_single_result(result: dict) -> str:
-    """Format a single URL result as markdown + HTML metadata (text only)."""
-    if "error" in result:
-        return f"❌ **Error:** {result['error']}"
-
-    meta = result["metadata"]
-    lines = [
-        f"### 🎬 {meta['title']}",
-        "",
-        _build_metadata_table(result["metadata"]),
-        "",
-        _build_link_row(
-            meta["webpage_url"],
-            meta["stream_url"],
-            meta["extractor"]
-        ),
-    ]
-    return "\n".join(lines)
-
-
-def _build_players_html(results: list[dict]) -> str:
-    """Build a complete HTML document with all video players for rich UI embed."""
-    players = []
-    for r in results:
-        if "error" in r:
-            continue
-        embed = r.get("embed_html", "")
-        if embed:
-            players.append(f'<div class="player-item">{embed}</div>')
-
-    if not players:
-        return ""
-
-    return f"""<!DOCTYPE html>
-<html>
-<head>
-<style>
-  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-  body {{ font-family: system-ui, sans-serif; padding: 8px; background: transparent; }}
-  .player-item {{ margin-bottom: 16px; }}
-  .player-item:last-child {{ margin-bottom: 0; }}
-</style>
-</head>
-<body>
-{"".join(players)}
-<script>
-  (function() {{
-    function rh() {{ var h = document.documentElement.scrollHeight; parent.postMessage({{ type: 'iframe:height', height: h }}, '*'); }}
-    window.addEventListener('load', rh);
-    new ResizeObserver(rh).observe(document.body);
-  }})();
-</script>
-</body>
-</html>"""
-
-
-def _build_context(results: list[dict]) -> str:
-    """Build text context for the LLM: metadata for each video, no raw HTML."""
-    lines = []
-    success_count = sum(1 for r in results if "error" not in r)
-    error_count = len(results) - success_count
-    summary = f"Video Embedder — {success_count} embedded"
-    if error_count:
-        summary += f", {error_count} failed"
-    lines.append(summary)
-
-    for i, r in enumerate(results, 1):
-        if "error" in r:
-            lines.append(f"Video {i}: ❌ Error — {r['error']}")
-        else:
-            meta = r["metadata"]
-            lines.append(
-                f"Video {i}: {meta['title']} ({meta['duration']}) — "
-                f"{meta['uploader']} — {meta['view_count']} views — {meta['resolution']}"
-            )
-            lines.append(f"  Original: {meta['webpage_url']}")
-            if meta["stream_url"]:
-                lines.append(f"  Stream: {meta['stream_url']}")
-
-    return "\n".join(lines)
+def _build_embed_code(embed_html: str) -> str:
+    """Wrap embed HTML in an instruction for the LLM."""
+    return f"Output this HTML code block:\n\n```html\n{embed_html}\n```"
 
 
 # ──────────────────────────────────────────────
@@ -477,11 +319,11 @@ class Tools:
         __event_emitter__=None,
     ) -> str:
         """
-        Embed one or more video URLs. Returns a rich HTML player that renders
-        inline in the chat, plus metadata context visible to the model.
+        Extract embed HTML from one or more video URLs.
+        Returns a code block you must output in your response.
 
         :param urls: One or more direct video page URLs
-        :return: Inline HTML player(s) with metadata
+        :return: HTML code block to display
         """
         if not urls:
             return "❌ No URLs provided."
@@ -499,14 +341,15 @@ class Tools:
 
         await self._emit_status(__event_emitter__, "All videos extracted", done=True)
 
-        players_html = _build_players_html(results)
-        context = _build_context(results)
+        parts = []
+        for i, r in enumerate(results, 1):
+            if "error" in r:
+                parts.append(f"❌ Video {i}: {r['error']}")
+            else:
+                embed_html = r["embed_html"]
+                if not embed_html:
+                    parts.append(f"❌ Video {i}: Could not generate embed for this URL.")
+                else:
+                    parts.append(_build_embed_code(embed_html))
 
-        if not players_html:
-            # All failed — return plain text
-            return context
-
-        return HTMLResponse(
-            content=players_html,
-            headers={"Content-Disposition": "inline"},
-        ), context
+        return "\n\n---\n\n".join(parts)

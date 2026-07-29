@@ -2,16 +2,7 @@
 
 import pytest
 
-from video_embedder import (
-    _format_duration,
-    _format_number,
-    _get_duration_str,
-    _get_view_count,
-    _get_uploader,
-    _get_resolution_str,
-    _get_best_format,
-    _get_best_direct_mp4,
-)
+from video_embedder import _format_duration, _get_best_format, _get_best_direct_mp4
 
 
 # ── _format_duration ──────────────────────────────────────────────────────
@@ -31,77 +22,6 @@ class TestFormatDuration:
         assert _format_duration(3600) == "1:00:00"
         assert _format_duration(3661) == "1:01:01"
         assert _format_duration(7384) == "2:03:04"
-
-
-# ── _format_number ────────────────────────────────────────────────────────
-
-class TestFormatNumber:
-    def test_small(self):
-        assert _format_number(0) == "0"
-        assert _format_number(42) == "42"
-        assert _format_number(999) == "999"
-
-    def test_thousands(self):
-        assert _format_number(1_000) == "1.0K"
-        assert _format_number(1_500) == "1.5K"
-        assert _format_number(999_999) == "1000.0K"
-
-    def test_millions(self):
-        assert _format_number(1_000_000) == "1.0M"
-        assert _format_number(2_500_000) == "2.5M"
-        assert _format_number(1_234_567) == "1.2M"
-
-
-# ── Metadata getters ──────────────────────────────────────────────────────
-
-class TestGetDurationStr:
-    def test_present(self):
-        assert _get_duration_str({"duration": 125}) == "2:05"
-
-    def test_missing(self):
-        assert _get_duration_str({}) == "?"
-
-    def test_none(self):
-        assert _get_duration_str({"duration": None}) == "?"
-
-
-class TestGetViewCount:
-    def test_present(self):
-        assert _get_view_count({"view_count": 1_234_567}) == "1.2M"
-
-    def test_missing(self):
-        assert _get_view_count({}) == "?"
-
-    def test_zero(self):
-        assert _get_view_count({"view_count": 0}) == "0"
-
-
-class TestGetUploader:
-    def test_uploader(self):
-        assert _get_uploader({"uploader": "SomeChannel"}) == "SomeChannel"
-
-    def test_channel_fallback(self):
-        assert _get_uploader({"channel": "ChannelName"}) == "ChannelName"
-
-    def test_uploader_preferred(self):
-        assert _get_uploader({"uploader": "Uploader", "channel": "Channel"}) == "Uploader"
-
-    def test_missing(self):
-        assert _get_uploader({}) == "?"
-
-    def test_empty(self):
-        assert _get_uploader({"uploader": ""}) == "?"
-
-
-class TestGetResolutionStr:
-    def test_present(self):
-        assert _get_resolution_str({"width": 1920, "height": 1080}) == "1920×1080"
-
-    def test_partial(self):
-        assert _get_resolution_str({"width": 1920}) == "?"
-
-    def test_missing(self):
-        assert _get_resolution_str({}) == "?"
 
 
 # ── Format selection ──────────────────────────────────────────────────────
