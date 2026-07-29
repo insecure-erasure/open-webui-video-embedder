@@ -275,21 +275,57 @@ def _process_url(url: str) -> dict:
     return {"embed_html": embed_html, "metadata": metadata}
 
 
-import re
+from html.parser import HTMLParser
+
+
+class _MediaTagFinder(HTMLParser):
+    """Extracts the first <iframe> or <video> tag from an HTML fragment."""
+    def __init__(self):
+        super().__init__()
+        self.tag = None
+        self._depth = 0
+        self._parts = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag in ("iframe", "video"):
+            if self.tag is None:
+                self.tag = tag
+            if self._depth == 0 and self.tag == tag:
+                self._parts = [self.get_starttag_text()]
+            self._depth += 1
+
+    def handle_endtag(self, tag):
+        if tag == self.tag:
+            self._depth -= 1
+            if self._depth == 0:
+                self._parts.append(f"</{tag}>")
+
+    def handle_data(self, data):
+        if self._depth > 0:
+            self._parts.append(data)
+
+
+def _extract_media_tag(html: str) -> str:
+    """Extract <iframe> or <video> element from a full HTML document."""
+    parser = _MediaTagFinder()
+    parser.feed(html)
+    return "".join(parser._parts) if parser.tag else ""
 
 
 def _combine_html(html_list: list[str]) -> str:
     """Combine multiple embed HTML fragments into a single HTML document."""
     if len(html_list) == 1:
         return html_list[0]
-    divs = []
+    inner = []
     for html in html_list:
-        m = re.search(r"<body[^>]*>(.*?)</body>", html, re.DOTALL)
-        if m:
-            divs.append(m.group(1))
-    joined = "\n".join(divs)
-    return f"""<body style="margin:0;background:#0d0d0d;width:100vw;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:16px 0;box-sizing:border-box">
+        tag = _extract_media_tag(html)
+        if tag:
+            inner.append(tag)
+    joined = "\n".join(inner)
+    return f"""<body style="margin:0;background:#0d0d0d;width:100vw;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px 0;box-sizing:border-box">
+<div style="width:100%;max-width:calc((100vh*9)/16);display:flex;flex-direction:column;gap:16px;border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.5)">
 {joined}
+</div>
 </body>"""
 
 
