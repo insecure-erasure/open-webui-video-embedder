@@ -180,6 +180,20 @@ test('iframe uses data-ar (9/16 portrait)', () => {
   close(parseFloat(player.style.height), 292.5 / (9 / 16), 0.01, 'height from ratio');
 });
 
+// --- 2b. portrait VIDEO with real dimensions (1080x1920) --------------------
+test('portrait video (9:16) sizes from real dims, capped by height, centered', () => {
+  const video = makeVideo({ videoWidth: 1080, videoHeight: 1920 });
+  const player = makePlayer({ tag: 'video', video });
+  const ctx = makeContext({ players: [player], clientWidth: 800, availHeight: 800 });
+  runPlayerScript(html, ctx);
+  const maxH = 800 * 0.65; // 520
+  const wByH = maxH * (1080 / 1920); // 292.5
+  close(parseFloat(player.style.width), wByH, 0.5, 'portrait video width from capped height');
+  close(parseFloat(player.style.height), maxH, 0.5, 'portrait video height == cap');
+  // body centers the player horizontally (flex) -> no need to assert style
+  eq(player.style.width, '292.5px', 'exact width string');
+});
+
 test('iframe falls back to 16/9 without data-ar', () => {
   const player = makePlayer({ tag: 'iframe' });
   const ctx = makeContext({ players: [player], clientWidth: 400, availHeight: 800 });
