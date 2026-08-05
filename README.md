@@ -6,8 +6,8 @@ An [Open WebUI](https://openwebui.com/) tool that uses `yt-dlp` to extract video
 
 1. You give it one or more video page URLs (e.g., from YouTube, Vimeo, Dailymotion, etc.)
 2. It runs `yt-dlp` under the hood to extract metadata and available formats
-3. It selects the **best quality format** automatically and generates embed HTML
-4. The HTML is returned as a code block that the LLM can output for rendering
+3. It selects the **best quality format** automatically and builds a self-contained player
+4. The tool returns a **Rich UI embed** (`HTMLResponse`) that Open WebUI renders inline in the chat as a sandboxed iframe — the LLM never sees the HTML
 
 ## Supported embed modes
 
@@ -43,28 +43,31 @@ embed_videos(urls=["https://www.youtube.com/watch?v=...", "https://vimeo.com/...
 **Parameters:**
 - `urls` — list of video page URLs to process
 
-**Returns:** a single HTML code block containing all video embeds, which the LLM should output verbatim in its response.
+**Returns:** a **Rich UI embed** (`HTMLResponse`) — the player(s) render inline in the chat via a sandboxed iframe. This is a terminal result: the LLM receives only the middleware's generic message and does not need to reproduce any HTML.
 
 ## Embed HTML
 
-The embed HTML is fully self-contained — the templates are built into the script (no external files required).
+The embed is fully self-contained — the player markup and sizing script are built into the tool (no external files required).
 
-Three inline templates are used, one per embed mode:
+The returned document contains one `.player` per video:
 
-| Template | Used for |
+| Player | Used for |
 |---|---|
-| iframe | Sites with known embed URLs |
-| video | Direct MP4 embeds |
-| HLS | HLS stream embeds |
+| `<iframe>` | Sites with known embed URLs (autoplay + fullscreen allowed) |
+| `<video>` | Direct MP4 and HLS stream embeds (`autoplay muted loop playsinline controls`) |
 
-Each embed is a `<body>` document with a centered, responsive container that:
+Each player is sized by a single script that:
 
-- preserves the video's **aspect ratio**, computed from the yt-dlp metadata dimensions (`math.gcd`, 16/9 fallback)
-- scales to fit the viewport (`100vw`/`100vh`) without distortion
-- has rounded corners, a subtle shadow, and a dark background
-- escapes the video title for the iframe `title` attribute
+- fits the chat container width, with the height **capped at 65% of the available screen height** (`screen.availHeight` — `vh` units are useless inside the sandboxed iframe)
+- uses the video's **real aspect ratio** from the `loadedmetadata` event (`videoWidth`/`videoHeight`), never a made-up ratio; yt-dlp's metadata dimensions serve as a provisional `data-ar` (16/9 fallback)
+- reports its height to the parent via `reportHeight()` (`postMessage` `iframe:height`) so the iframe hugs the content
+- re-fits on `loadedmetadata`/`loadeddata`/`canplay`, `resize`, and a `ResizeObserver`
 
-When multiple videos are requested, each keeps its own aspect-ratio container and all are combined into a single HTML document.
+When multiple videos are requested, all players are stacked in a single document.
+
+## How it renders (Rich UI)
+
+Open WebUI's middleware detects the `HTMLResponse` (with `Content-Disposition: inline`), emits the `embeds` event via Socket.IO, and the frontend renders it as a **sandboxed iframe**. The HTML never enters the LLM's context — rendering is deterministic, unlike the previous approach that asked the model to reproduce an HTML code block.
 
 ## Requirements
 

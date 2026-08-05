@@ -1,21 +1,22 @@
 """
 title: Video Embedder
 author: Insecure Erasure
-description: Uses yt-dlp to extract video metadata from supported sites and returns embed-ready HTML.
+description: Uses yt-dlp to extract video metadata from supported sites and returns a Rich UI embed (HTMLResponse) that Open WebUI renders inline.
 required_open_webui_version: 0.5.0
 requirements: yt-dlp
-version: 0.1.0
+version: 0.2.0
 licence: MIT
 """
 
 import asyncio
-import json
+import html
 import logging
 import math
 
-from html.parser import HTMLParser
 from pydantic import BaseModel
 from yt_dlp import YoutubeDL
+
+from fastapi.responses import HTMLResponse
 
 logger = logging.getLogger(__name__)
 
@@ -105,43 +106,123 @@ def _get_best_direct_mp4(data: dict) -> str | None:
 
 
 # ──────────────────────────────────────────────
-#  HTML Templates
+#  Rich UI embed (HTMLResponse)
 # ──────────────────────────────────────────────
 
-# Default inline templates (always available)
-_AR_W = 16
-_AR_H = 9
-_AR = "16/9"
+# The tool returns a bare HTMLResponse (no tuple). Open WebUI's middleware
+# detects it, emits the `embeds` event via Socket.IO, and the frontend
+# renders it inline as a sandboxed iframe. The LLM never sees the HTML and
+# receives only the middleware's generic message.
+#
+# Sizing (see DESIGN.md §6/§10 in open-webui-comfy-tools):
+#  - `vh`/`vw` inside the sandboxed iframe refer to the iframe box (~150px
+#    initial), NOT the browser viewport. Any viewport cap is expressed via
+#    `screen.availHeight` (readable in the sandbox): 65% cap.
+#  - The video's real aspect ratio comes from `loadedmetadata`
+#    (`videoWidth`/`videoHeight`) — never a made-up ratio. yt-dlp's
+#    metadata dimensions are used as a provisional `data-ar` until the real
+#    one arrives.
+#  - `reportHeight()` keeps the iframe at the content's real height.
 
-_HTML_IFRAME_TEMPLATE = '<body style="margin:0;background:#0d0d0d;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center"><div style="width:100%;height:100%;max-width:calc(100vh*{ar_w}/{ar_h});max-height:calc(100vw*{ar_h}/{ar_w});aspect-ratio:{ar};border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.5)"><iframe src="{embed_url}" title="{safe_title}" allow="autoplay;fullscreen" allowfullscreen loading="lazy" style="width:100%;height:100%;border:0;background:#0d0d0d"></iframe></div></body>'
-
-_HTML_VIDEO_TEMPLATE = '<body style="margin:0;background:#0d0d0d;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center"><div style="width:100%;height:100%;max-width:calc(100vh*{ar_w}/{ar_h});max-height:calc(100vw*{ar_h}/{ar_w});aspect-ratio:{ar};border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.5)"><video src="{video_url}" controls preload="metadata" playsinline style="width:100%;height:100%;border:0;background:#0d0d0d"></video></div></body>'
-
-_HTML_HLS_TEMPLATE = '<body style="margin:0;background:#0d0d0d;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center"><div style="width:100%;height:100%;max-width:calc(100vh*{ar_w}/{ar_h});max-height:calc(100vw*{ar_h}/{ar_w});aspect-ratio:{ar};border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.5)"><video src="{video_url}" controls preload="metadata" style="width:100%;height:100%;border:0;background:#0d0d0d"></video></div></body>'
-
-
-
+def _aspect_ratio(width: int | None, height: int | None) -> str:
+    """Return a 'w/h' aspect-ratio string from media dimensions, 16/9 fallback."""
+    if width and height:
+        g = math.gcd(width, height)
+        return f"{width // g}/{height // g}"
+    return "16/9"
 
 
 def _build_iframe_html(embed_url: str, title: str = "", width: int | None = None, height: int | None = None) -> str:
-    """Generate iframe embed HTML."""
-    safe_title = title.replace('"', "&quot;")
-    ar_w, ar_h, ar = _calc_aspect_ratio(width, height)
-    return (_HTML_IFRAME_TEMPLATE.replace("{embed_url}", embed_url)
-            .replace("{safe_title}", safe_title)
-            .replace("{ar_w}", str(ar_w))
-            .replace("{ar_h}", str(ar_h))
-            .replace("{ar}", ar))
+    """Build a `.player` fragment containing a site iframe embed."""
+    src = html.escape(embed_url, quote=True)
+    safe_title = html.escape(title, quote=True)
+    ar = _aspect_ratio(width, height)
+    return (
+        f'<div class="player" data-ar="{ar}">'
+        f'<iframe src="{src}" title="{safe_title}" allow="autoplay;fullscreen" '
+        f'allowfullscreen loading="lazy"></iframe>'
+        f"</div>"
+    )
 
 
-def _build_video_html(video_url: str, title: str = "", m3u8: bool = False, width: int | None = None, height: int | None = None) -> str:
-    """Generate <video> embed HTML for direct MP4 or HLS."""
-    tpl = _HTML_HLS_TEMPLATE if m3u8 else _HTML_VIDEO_TEMPLATE
-    ar_w, ar_h, ar = _calc_aspect_ratio(width, height)
-    return (tpl.replace("{video_url}", video_url)
-            .replace("{ar_w}", str(ar_w))
-            .replace("{ar_h}", str(ar_h))
-            .replace("{ar}", ar))
+def _build_video_html(video_url: str, width: int | None = None, height: int | None = None) -> str:
+    """Build a `.player` fragment containing a native `<video>` element (MP4 or HLS)."""
+    src = html.escape(video_url, quote=True)
+    ar = _aspect_ratio(width, height)
+    return (
+        f'<div class="player" data-ar="{ar}">'
+        f'<video src="{src}" autoplay muted loop playsinline controls preload="metadata"></video>'
+        f"</div>"
+    )
+
+
+def _build_player_document(players: list[str]) -> str:
+    """Combine `.player` fragments into a self-contained HTML document.
+
+    A single sizing script fits every player to the chat container width
+    (height capped at 65% of the available screen height) and reports the
+    document height to the parent so the iframe hugs the content. Videos
+    are re-fit on `loadedmetadata`/`loadeddata`/`canplay` (real aspect
+    ratio), iframes use their `data-ar` (from yt-dlp metadata, 16/9
+    fallback).
+    """
+    joined = "\n".join(players)
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{{
+  color-scheme:light dark;
+}}
+*{{margin:0;padding:0;box-sizing:border-box}}
+html,body{{height:100%;overflow:hidden;margin:0;padding:0}}
+body{{display:flex;flex-direction:column;align-items:center;gap:16px;padding:16px;background:transparent}}
+.player{{max-width:100%;overflow:hidden;border-radius:12px;background:#000}}
+.player video,.player iframe{{display:block;width:100%;height:100%;border:0;object-fit:contain;border-radius:12px;background:#000}}
+</style>
+</head>
+<body>
+{joined}
+<script>
+const players=[...document.querySelectorAll('.player')];
+function reportHeight(){{parent.postMessage({{type:'iframe:height',height:document.documentElement.scrollHeight}},'*')}}
+function ratioOf(p){{
+  const v=p.querySelector('video');
+  if(v&&v.videoWidth>0&&v.videoHeight>0)return v.videoWidth/v.videoHeight;
+  const a=(p.dataset.ar||'16/9').split('/').map(Number);
+  return a[0]>0&&a[1]>0?a[0]/a[1]:16/9;
+}}
+function fit(){{
+  // Height cap: 65% of the available screen height (screen.availHeight is
+  // readable inside the sandbox; vh/vw units refer to the iframe box and
+  // are useless here). The width derives from the container width and the
+  // aspect ratio; the height never overflows the available screen space.
+  const maxH=(screen.availHeight||screen.height||0)*0.65;
+  const cw=document.documentElement.clientWidth;
+  for(const p of players){{
+    const r=ratioOf(p);
+    let w=cw;
+    if(maxH>0){{const wByH=maxH*r;if(wByH>0&&wByH<w)w=wByH;}}
+    p.style.width=w+'px';
+    p.style.height=(w/r)+'px';
+  }}
+  reportHeight();
+}}
+for(const v of document.querySelectorAll('video')){{
+  v.addEventListener('loadedmetadata',fit);
+  v.addEventListener('loadeddata',fit);
+  v.addEventListener('canplay',fit);
+}}
+window.addEventListener('load',fit);
+addEventListener('resize',fit);
+new ResizeObserver(fit).observe(document.body);
+fit();
+</script>
+</body>
+</html>
+"""
 
 
 # ──────────────────────────────────────────────
@@ -151,7 +232,7 @@ def _build_video_html(video_url: str, title: str = "", m3u8: bool = False, width
 def _process_url(url: str) -> dict:
     """
     Process a video URL and return:
-      - embed_html: ready-to-use HTML
+      - embed_html: ready-to-use `.player` HTML fragment
       - metadata: dict with video info
       - error: message if failed
     """
@@ -177,19 +258,16 @@ def _process_url(url: str) -> dict:
     else:
         direct_mp4 = _get_best_direct_mp4(data)
         if direct_mp4:
-            embed_html = _build_video_html(direct_mp4, title, width=w, height=h)
+            embed_html = _build_video_html(direct_mp4, width=w, height=h)
             stream_url = direct_mp4
         else:
             best = _get_best_format(data)
             if best:
                 url_best = best.get("url", "")
-                is_m3u8 = "m3u8" in (best.get("protocol", "") or "") or ".m3u8" in url_best
-                embed_html = _build_video_html(url_best, title, m3u8=is_m3u8, width=w, height=h)
+                embed_html = _build_video_html(url_best, width=w, height=h)
                 stream_url = url_best
             else:
                 embed_html = ""
-
-
 
     metadata = {
         "title": data.get("title", "?"),
@@ -198,74 +276,6 @@ def _process_url(url: str) -> dict:
     }
 
     return {"embed_html": embed_html, "metadata": metadata}
-
-
-def _calc_aspect_ratio(width: int | None, height: int | None) -> tuple[int, int, str]:
-    """Return (ar_w, ar_h, "ar_w/ar_h") from dimensions, defaults to 16/9."""
-    if width and height:
-        g = math.gcd(width, height)
-        ar_w = width // g
-        ar_h = height // g
-        return ar_w, ar_h, f"{ar_w}/{ar_h}"
-    return _AR_W, _AR_H, _AR
-
-
-class _BodyContentFinder(HTMLParser):
-    """Extract the content inside <body> from a full HTML document."""
-    def __init__(self):
-        super().__init__()
-        self._in_body = False
-        self._depth = 0
-        self._parts = []
-
-    def handle_starttag(self, tag, attrs):
-        if tag == "body":
-            self._in_body = True
-            return
-        if self._in_body:
-            self._parts.append(self.get_starttag_text())
-
-    def handle_endtag(self, tag):
-        if tag == "body":
-            self._in_body = False
-            return
-        if self._in_body:
-            self._parts.append(f"</{tag}>")
-
-    def handle_data(self, data):
-        if self._in_body:
-            self._parts.append(data)
-
-    def handle_startendtag(self, tag, attrs):
-        if self._in_body:
-            self._parts.append(self.get_starttag_text())
-
-
-def _extract_body_content(html: str) -> str:
-    """Return the HTML content inside <body> (the <div> with aspect-ratio)."""
-    parser = _BodyContentFinder()
-    parser.feed(html)
-    return "".join(parser._parts)
-
-
-def _combine_html(html_list: list[str]) -> str:
-    """Combine multiple embed HTML fragments into a single HTML document.
-    Each embed keeps its own <div> with its specific aspect-ratio.
-    """
-    if len(html_list) == 1:
-        return html_list[0]
-    divs = []
-    for html in html_list:
-        content = _extract_body_content(html)
-        if content:
-            divs.append(content)
-    joined = "".join(divs)
-    return f'<body style="margin:0;background:#0d0d0d;width:100vw;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:16px 0;box-sizing:border-box">{joined}</body>'
-
-
-def _build_embed_code(embed_html: str) -> str:
-    """Wrap embed HTML in an instruction for the LLM."""
-    return f'Output this HTML exactly, without modifying it:\n\n```html\n{embed_html}\n```'
 
 
 # ──────────────────────────────────────────────
@@ -289,11 +299,17 @@ class Tools:
         self,
         urls: list[str],
         __event_emitter__=None,
-    ) -> str:
+    ):
         """
-        Generate embed HTML from one or more video page URLs.
+        Generate a Rich UI embed (HTMLResponse) with the video player(s) for one or more video page URLs.
         Pass the URL of the video page itself (e.g. the page you watch the video on),
         not the direct CDN/MP4 link. This tool uses yt-dlp to extract metadata.
+
+        Terminal result: the player is rendered inline in the chat via a
+        sandboxed iframe (self-contained, autoplay muted loop, native
+        controls). The LLM never sees the HTML and receives only the
+        middleware's generic message — acknowledge that the video(s) were
+        embedded and do not fabricate URLs.
 
         :param urls: One or more video page URLs
         """
@@ -328,5 +344,5 @@ class Tools:
             await self._emit_status(__event_emitter__, "❌ None of the videos could be embedded", done=True)
             return "❌ None of the videos could be embedded."
 
-        combined = _combine_html(embeds)
-        return _build_embed_code(combined)
+        document = _build_player_document(embeds)
+        return HTMLResponse(content=document, headers={"Content-Disposition": "inline"})

@@ -112,20 +112,18 @@ def no_usable_formats_data():
 
 # ─── Helpers ──────────────────────────────────────────────────────────────
 
-def assert_iframe_html(html: str, *, embed_url: str, title: str, ar_w: int = 9, ar_h: int = 16):
+def assert_iframe_html(html: str, *, embed_url: str, title: str, ar: str = "9/16"):
     assert "iframe" in html
-    assert embed_url in html
-    assert "width:100vw" in html
-    assert f"aspect-ratio:{ar_w}/{ar_h}" in html
-    assert f"max-width:calc(100vh*{ar_w}/{ar_h})" in html
+    assert f'src="{embed_url}"' in html
+    assert f'data-ar="{ar}"' in html
+    assert "allowfullscreen" in html
 
 
-def assert_video_html(html: str, *, video_url: str, is_hls: bool = False, ar_w: int = 16, ar_h: int = 9):
+def assert_video_html(html: str, *, video_url: str, ar: str = "16/9"):
     assert "video" in html
     assert "controls" in html
-    assert video_url in html
-    assert "width:100vw" in html
-    assert f"max-height:calc(100vw*{ar_h}/{ar_w})" in html
+    assert f'src="{video_url}"' in html
+    assert f'data-ar="{ar}"' in html
 
 
 # ─── Tests: iframe path ──────────────────────────────────────────────────
@@ -140,7 +138,7 @@ class TestIframePath:
             result["embed_html"],
             embed_url="https://www.redgifs.com/ifr/reflectingwellinformedgordonsetter",
             title="Bikini Micro Bikini SFW TikTok",
-            ar_w=9, ar_h=16,
+            ar="9/16",
         )
 
     def test_metadata_has_title_and_urls(self, iframe_data):
@@ -161,7 +159,7 @@ class TestDirectMp4Path:
             result = _process_url("https://vimeo.com/1084537")
 
         assert "error" not in result
-        assert_video_html(result["embed_html"], video_url="https://player.vimeo.com/progressive_redirect/1084537/1080p.mp4", ar_w=16, ar_h=9)
+        assert_video_html(result["embed_html"], video_url="https://player.vimeo.com/progressive_redirect/1084537/1080p.mp4", ar="16/9")
         assert result["metadata"]["title"] == "Big Buck Bunny"
 
 
@@ -175,8 +173,8 @@ class TestHlsPath:
         assert "error" not in result
         assert_video_html(
             result["embed_html"],
-            video_url="https://vod3.cf.dmcdn.net/sec2(x9yfz8u_1080)/video.m3u8", is_hls=True,
-            ar_w=16, ar_h=9,
+            video_url="https://vod3.cf.dmcdn.net/sec2(x9yfz8u_1080)/video.m3u8",
+            ar="16/9",
         )
         assert result["metadata"]["title"] == "Big Buck Bunny | Official Blender Foundation Short Film (HD, 60fps)"
 
@@ -192,8 +190,8 @@ class TestWebmPath:
         # Picks HLS (720p) over webm (360p) — higher resolution wins
         assert_video_html(
             result["embed_html"],
-            video_url="https://vod3.cf.dmcdn.net/sec2(x24fho2_720)/video.m3u8", is_hls=True,
-            ar_w=16, ar_h=9,
+            video_url="https://vod3.cf.dmcdn.net/sec2(x24fho2_720)/video.m3u8",
+            ar="16/9",
         )
         assert result["metadata"]["title"] == "Big Buck Bunny - Blender Foundation"
 
