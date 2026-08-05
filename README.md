@@ -16,16 +16,17 @@ The tool picks the best strategy depending on the source site:
 ### 🖼️ Iframe embed
 For sites with known embed URLs, the tool generates an `<iframe>` pointing to the platform's official embed page. No CORS issues.
 
-Examples: YouTube, Vimeo.
+Currently mapped: **YouTube** (`youtube.com` / `youtu.be`).
 
 ### ▶️ Direct video embed
-For sites that offer **direct MP4** URLs (e.g., Vimeo), the tool generates a `<video>` tag using the highest-resolution MP4 available.
+For sites that offer **direct HTTPS MP4** URLs (e.g., Vimeo), the tool generates a `<video>` tag using the highest-resolution MP4 available.
 
 ### 📡 HLS stream embed
-For sites that only provide HLS streams (`.m3u8`), the tool falls back to a `<video>` tag pointing to the HLS URL.
+For sites that only provide HLS streams (`.m3u8`), the tool falls back to a `<video>` tag pointing to the HLS URL (e.g., Dailymotion).
 
 ## Format selection logic
 
+- **Direct HTTPS MP4** is preferred whenever available (progressive download, browser-playable)
 - **Highest resolution** wins
 - **MP4 over HLS** at the same resolution (prefers progressive download over streaming)
 - **Skips `mhtml`** containers (not playable in browsers)
@@ -42,31 +43,28 @@ embed_videos(urls=["https://www.youtube.com/watch?v=...", "https://vimeo.com/...
 **Parameters:**
 - `urls` — list of video page URLs to process
 
-**Returns:** HTML code blocks (one per video) that the LLM should output in its response.
+**Returns:** a single HTML code block containing all video embeds, which the LLM should output verbatim in its response.
 
-## Templates
+## Embed HTML
 
-Embed HTML can be customized by placing template files in the tool's assets directory:
+The embed HTML is fully self-contained — the templates are built into the script (no external files required).
 
-| Template file | Used for |
+Three inline templates are used, one per embed mode:
+
+| Template | Used for |
 |---|---|
-| `templates/iframe.html` | Iframe embeds |
-| `templates/video.html` | Direct MP4 embeds |
-| `templates/hls.html` | HLS stream embeds |
+| iframe | Sites with known embed URLs |
+| video | Direct MP4 embeds |
+| HLS | HLS stream embeds |
 
-If a template file exists, it is loaded from disk. Otherwise, the built-in default template is used.
+Each embed is a `<body>` document with a centered, responsive container that:
 
-Template variables:
-- `{embed_url}` — embed/src URL
-- `{video_url}` — video source URL
-- `{safe_title}` — video title (HTML-escaped, only in iframe template)
+- preserves the video's **aspect ratio**, computed from the yt-dlp metadata dimensions (`math.gcd`, 16/9 fallback)
+- scales to fit the viewport (`100vw`/`100vh`) without distortion
+- has rounded corners, a subtle shadow, and a dark background
+- escapes the video title for the iframe `title` attribute
 
-### Default templates location
-
-Resolution order:
-1. `$TOOL_ASSETS_DIR` environment variable (explicit override)
-2. `$DATA_DIR/cache/tools/video-embedder/` (Open WebUI standard cache path)
-3. Script directory (local development fallback)
+When multiple videos are requested, each keeps its own aspect-ratio container and all are combined into a single HTML document.
 
 ## Requirements
 
@@ -99,13 +97,9 @@ The test suite covers:
 - **No usable formats** — when only mhtml containers exist
 - **Error handling** — when yt-dlp fails
 
-### Valve configuration
+### Configuration
 
-The tool exposes one configurable valve:
-
-| Valve | Type | Default | Description |
-|---|---|---|---|
-| `ytdlp_timeout` | `int` | `60` | Timeout in seconds for each yt-dlp call |
+The tool currently exposes **no configurable valves** (the `Valves` class is empty) and has no external configuration. All behavior is built in.
 
 ## License
 

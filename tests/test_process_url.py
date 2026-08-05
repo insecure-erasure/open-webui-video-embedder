@@ -22,7 +22,7 @@ from video_embedder import _process_url
 
 @pytest.fixture
 def iframe_data():
-    """RedGifs — real video from redgifs.com/watch/reflectingwellinformedgordonsetter."""
+    """Site with a known embed URL and direct MP4 formats."""
     return {
         "id": "reflectingwellinformedgordonsetter",
         "extractor": "RedGifs",
@@ -128,7 +128,7 @@ def assert_video_html(html: str, *, video_url: str, is_hls: bool = False, ar_w: 
     assert f"max-height:calc(100vw*{ar_h}/{ar_w})" in html
 
 
-# ─── Tests: iframe path (RedGifs) ────────────────────────────────────────
+# ─── Tests: iframe path ──────────────────────────────────────────────────
 
 class TestIframePath:
     def test_returns_iframe_html(self, iframe_data):
