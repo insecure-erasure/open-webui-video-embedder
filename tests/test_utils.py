@@ -2,7 +2,70 @@
 
 import pytest
 
-from video_embedder import _format_duration, _get_best_format, _get_best_direct_mp4, _get_youtube_id
+from video_embedder import (
+    _classify_http_error,
+    _format_duration,
+    _get_best_format,
+    _get_best_direct_mp4,
+    _get_youtube_id,
+    _http_error_message,
+)
+
+
+# ── HTTP error classification ──────────────────────────────────────────────
+
+from yt_dlp.networking.exceptions import HTTPError as _RealHTTPError
+
+
+class _FakeResponse:
+    """Minimal response object the real yt-dlp HTTPError reads .status from."""
+    def __init__(self, status):
+        self.status = status
+        self.reason = "reason"
+
+
+def _real_httperror(status):
+    return _RealHTTPError(_FakeResponse(status))
+
+
+class TestClassifyHttpError:
+    def test_direct_httperror(self):
+        assert _classify_http_error(_real_httperror(410)) == 410
+
+    def test_wrapped_in_download_error(self):
+        # yt-dlp wraps the HTTPError in a DownloadError (cause chain)
+        outer = Exception("DownloadError")
+        outer.__cause__ = _real_httperror(403)
+        assert _classify_http_error(outer) == 403
+
+    def test_nested_cause_chain(self):
+        mid = Exception("mid")
+        mid.__cause__ = _real_httperror(404)
+        outer = Exception("outer")
+        outer.__cause__ = mid
+        assert _classify_http_error(outer) == 404
+
+    def test_non_http_error(self):
+        assert _classify_http_error(ValueError("boom")) is None
+
+    def test_http_error_without_status(self):
+        e = Exception("no status")
+        e.__cause__ = _real_httperror(None)
+        assert _classify_http_error(e) is None
+
+
+class TestHttpErrorMessage:
+    def test_known_codes(self):
+        assert "410" in _http_error_message(410, "fallback")
+        assert "removed" in _http_error_message(410, "fallback")
+        assert "forbidden" in _http_error_message(403, "fallback")
+
+    def test_unknown_code(self):
+        assert "rejected" in _http_error_message(503, "fallback")
+        assert "503" in _http_error_message(503, "fallback")
+
+    def test_none_falls_back(self):
+        assert _http_error_message(None, "raw message") == "raw message"
 
 
 # ── _get_youtube_id ──────────────────────────────────────────────────────

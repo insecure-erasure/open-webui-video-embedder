@@ -35,6 +35,28 @@ For sites that only provide HLS streams (`.m3u8`), the tool falls back to a `<vi
 - **Skips `mhtml`** containers (not playable in browsers)
 - Falls back to whatever format is available
 
+## Error handling
+
+Provider errors are classified using standard HTTP libraries — nothing is hand-rolled:
+
+- **`yt_dlp.networking.exceptions.HTTPError`** (already a yt-dlp dependency) is unwrapped from the `DownloadError` that `extract_info` wraps it in, to recover the real status code (`_classify_http_error` walks the exception cause chain).
+- **`httpx`** performs a `HEAD` request against direct MP4/HLS stream URLs before embedding them (`_verify_stream`).
+
+The tool maps these statuses to specific, user-facing messages:
+
+| Status | Meaning |
+|---|---|
+| `401` | Authentication required |
+| `403` | Forbidden — the provider refuses access |
+| `404` | Not found — the video no longer exists |
+| `410` | Gone — the video was removed |
+
+Behavior:
+- A 401/403/404/410 **from yt-dlp** (extracting a page) → the video is skipped with the specific message.
+- A 401/403/404/410 **from a direct stream HEAD** → the embed is not shipped (a dead `<video>` is useless) and the specific message is returned instead.
+- A **failed HEAD check** (DNS, timeout, network) is NOT treated as a 4xx — the embed proceeds anyway, since an unverifiable stream may still play.
+- **Platform iframes** (e.g. YouTube) and the **YouTube fast-path** skip the stream HEAD entirely: the embed page handles its own errors.
+
 ## Usage (Open WebUI)
 
 Once installed as an Open WebUI tool, the function `embed_videos` becomes available to the LLM:
@@ -76,11 +98,13 @@ Open WebUI's middleware detects the `HTMLResponse` (with `Content-Disposition: i
 
 - **Python 3.10+**
 - **[yt-dlp](https://github.com/yt-dlp/yt-dlp)** — must be installed and available in `PATH`. Required for non-YouTube sites; YouTube embeds do **not** use yt-dlp (URL parsing only)
+- **[httpx](https://www.python-httpx.org/)** — for stream URL health checks
 - Open WebUI (when deploying as a tool)
 
 ### Python dependencies (for development)
 
 - `pydantic` — for the Valves model
+- `httpx` — stream health checks
 - `pytest` — for running tests
 
 ## Development

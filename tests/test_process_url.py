@@ -9,6 +9,7 @@ Covers:
   - Webm direct  (Dailymotion — webm format available)
   - No embed     (only mhtml format -> no embed HTML)
   - Error        (yt-dlp returns None)
+  - HTTP errors  (401/403/404/410 from yt-dlp or stream HEAD)
 """
 
 from unittest.mock import patch
@@ -16,6 +17,13 @@ from unittest.mock import patch
 import pytest
 
 from video_embedder import _process_url
+
+
+@pytest.fixture(autouse=True)
+def _mock_stream_check():
+    """No network in tests: direct-stream embeds assume the stream is healthy."""
+    with patch("video_embedder._verify_stream", return_value=200):
+        yield
 
 
 # ─── Fixtures: real video data ────────────────────────────────────────────
@@ -238,6 +246,62 @@ class TestYouTubeFastPath:
             result = _process_url("https://www.youtube.com/@channel")
         assert "error" in result
         m.assert_called_once()
+
+
+# ─── Tests: HTTP error handling (401/403/404/410) ─────────────────────────
+
+class TestHttpErrors:
+    @pytest.mark.parametrize("code,label", [
+        (401, "authentication required"),
+        (403, "forbidden"),
+        (404, "not found"),
+        (410, "gone"),
+    ])
+    def test_ytdlp_error_with_status(self, code, label):
+        from video_embedder import _YtDlpError
+
+        with patch("video_embedder._run_ytdlp",
+                   return_value=(None, _YtDlpError(f"HTTP Error {code}", http_status=code))):
+            result = _process_url("https://example.com/video")
+        assert "error" in result
+        assert str(code) in result["error"]
+        assert label in result["error"]
+
+    def test_ytdlp_error_without_status_keeps_raw_message(self):
+        # Backwards-compatible: plain string errors (as older mocks do)
+        with patch("video_embedder._run_ytdlp", return_value=(None, "HTTP Error 410: Gone")):
+            result = _process_url("https://example.com/broken")
+        assert "410" in result["error"]
+
+    @pytest.mark.parametrize("code", [401, 403, 404, 410])
+    def test_stream_check_rejects_dead_stream(self, code, direct_mp4_data):
+        # Override the autouse 200 mock: the stream HEAD returns a 4xx
+        with patch("video_embedder._run_ytdlp", return_value=(direct_mp4_data, None)), \
+             patch("video_embedder._verify_stream", return_value=code):
+            result = _process_url("https://vimeo.com/1084537")
+        assert "error" in result
+        assert str(code) in result["error"]
+
+    def test_stream_check_unreachable_embeds_anyway(self, direct_mp4_data):
+        # Check failure (None) is NOT a confirmed 4xx -> embed proceeds
+        with patch("video_embedder._run_ytdlp", return_value=(direct_mp4_data, None)), \
+             patch("video_embedder._verify_stream", return_value=None):
+            result = _process_url("https://vimeo.com/1084537")
+        assert "error" not in result
+        assert "video" in result["embed_html"]
+
+    def test_iframe_path_skips_stream_check(self, iframe_data):
+        # Platform iframes do not HEAD-check the stream
+        with patch("video_embedder._verify_stream", side_effect=AssertionError("must not be called")) as m:
+            result = _process_url("https://redgifs.com/watch/reflectingwellinformedgordonsetter")
+        assert "error" not in result
+        m.assert_not_called()
+
+    def test_youtube_fastpath_skips_stream_check(self):
+        with patch("video_embedder._verify_stream", side_effect=AssertionError("must not be called")) as m:
+            result = _process_url("https://www.youtube.com/watch?v=hb5fsQyvFF4")
+        assert "error" not in result
+        m.assert_not_called()
 
 
 # ─── Tests: yt-dlp error ────────────────────────────────────────────────

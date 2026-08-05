@@ -3,8 +3,8 @@ title: Video Embedder
 author: Insecure Erasure
 description: Uses yt-dlp to extract video metadata from supported sites and returns a Rich UI embed (HTMLResponse) that Open WebUI renders inline.
 required_open_webui_version: 0.5.0
-requirements: yt-dlp
-version: 0.3.0
+requirements: yt-dlp, httpx
+version: 0.4.0
 licence: MIT
 """
 
@@ -14,12 +14,67 @@ import logging
 import math
 import re
 
+import httpx
 from pydantic import BaseModel
 from yt_dlp import YoutubeDL
+from yt_dlp.networking.exceptions import HTTPError
 
 from fastapi.responses import HTMLResponse
 
 logger = logging.getLogger(__name__)
+
+
+
+
+# ──────────────────────────────────────────────
+#  HTTP error classification
+# ──────────────────────────────────────────────
+
+# HTTP status codes the tool treats as "gone / forbidden / gone" (the video
+# or its CDN stream is not available), mapped to user-facing messages.
+_HTTP_STATUS_MESSAGES = {
+    401: "authentication required (401)",
+    403: "forbidden (403) — the provider refuses access",
+    404: "not found (404) — the video no longer exists",
+    410: "gone (410) — the video was removed",
+}
+
+# How long a stream HEAD check may take before we give up and embed anyway.
+_STREAM_CHECK_TIMEOUT = 5.0
+
+
+class _YtDlpError:
+    """Error returned by `_run_ytdlp`: human message + optional HTTP status."""
+
+    def __init__(self, message: str, http_status: int | None = None):
+        self.message = message
+        self.http_status = http_status
+
+    def __str__(self) -> str:
+        return self.message
+
+
+def _classify_http_error(err: Exception) -> int | None:
+    """Return the HTTP status code if `err` is (or wraps) a yt-dlp HTTPError.
+
+    yt-dlp's `extract_info` wraps the raw HTTPError inside a DownloadError;
+    the real status is in the cause chain (`__cause__`/`__context__`).
+    """
+    seen = set()
+    cur = err
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        if isinstance(cur, HTTPError) and getattr(cur, "status", None):
+            return cur.status
+        cur = cur.__cause__ or cur.__context__
+    return None
+
+
+def _http_error_message(status: int | None, fallback: str) -> str:
+    """User-facing message for an HTTP status, falling back to the raw error."""
+    if status is None:
+        return fallback
+    return f"HTTP {status}: {_HTTP_STATUS_MESSAGES.get(status, 'provider rejected the request')}"
 
 
 
@@ -66,9 +121,13 @@ def _get_youtube_id(url: str) -> str | None:
 #  Utilities
 # ──────────────────────────────────────────────
 
-def _run_ytdlp(args: list[str]) -> tuple[dict | None, str | None]:
+def _run_ytdlp(args: list[str]) -> tuple[dict | None, _YtDlpError | None]:
     """Run yt-dlp and return (data, error).
-    Returns (dict, None) on success, (None, str) on failure.
+    Returns (dict, None) on success, (None, error) on failure.
+
+    The error carries the HTTP status (401/403/404/410/...) when the
+    provider rejected the request, extracted from the yt-dlp HTTPError
+    nested inside the DownloadError it wraps.
     """
     url = args[0] if args else ""
     try:
@@ -77,8 +136,26 @@ def _run_ytdlp(args: list[str]) -> tuple[dict | None, str | None]:
             return data, None
     except Exception as e:
         msg = str(e).strip()
-        logger.warning(f"yt-dlp error: {msg}")
-        return None, msg
+        status = _classify_http_error(e)
+        logger.warning(f"yt-dlp error ({status}): {msg}")
+        return None, _YtDlpError(msg, http_status=status)
+
+
+def _verify_stream(url: str) -> int | None:
+    """HEAD the stream URL and return the HTTP status code, or None.
+
+    Uses httpx (standard HTTP client) instead of hand-rolling requests.
+    Returns None when the check itself fails (DNS, timeout, network) — the
+    embed proceeds anyway, because a failed check is not a confirmed 4xx.
+    """
+    if not url:
+        return None
+    try:
+        with httpx.Client(timeout=_STREAM_CHECK_TIMEOUT, follow_redirects=True) as client:
+            return client.head(url).status_code
+    except Exception as e:
+        logger.debug(f"stream check failed for {url}: {e}")
+        return None
 
 
 def _format_duration(seconds: int) -> str:
@@ -282,7 +359,9 @@ def _process_url(url: str) -> dict:
 
     data, err = _run_ytdlp([url])
     if data is None:
-        return {"error": err or "Could not extract info from URL"}
+        status = getattr(err, "http_status", None)
+        fallback = getattr(err, "message", err) or "Could not extract info from URL"
+        return {"error": _http_error_message(status, fallback)}
 
     extractor = data.get("extractor", "")
     video_id = data.get("id", "")
@@ -297,6 +376,8 @@ def _process_url(url: str) -> dict:
 
     iframe_url = _get_embed_url(extractor, video_id, data.get("webpage_url_domain"))
     if iframe_url:
+        # Platform iframe (YouTube, ...): the embed page handles its own
+        # errors, and the stream URL is not what we render — no HEAD check.
         embed_html = _build_iframe_html(iframe_url, title, width=w, height=h)
         stream_url = _get_best_direct_mp4(data) or data.get("url")
     else:
@@ -312,6 +393,15 @@ def _process_url(url: str) -> dict:
                 stream_url = url_best
             else:
                 embed_html = ""
+
+        # The embed is a direct <video> pointing at the stream URL: if the
+        # provider returns a 401/403/404/410 (gone/forbidden/removed), the
+        # video will not play — fail with a specific message instead of
+        # shipping a dead embed.
+        if embed_html and stream_url:
+            stream_status = _verify_stream(stream_url)
+            if stream_status in _HTTP_STATUS_MESSAGES:
+                return {"error": _http_error_message(stream_status, "video stream unavailable")}
 
     metadata = {
         "title": data.get("title", "?"),
