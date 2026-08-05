@@ -268,7 +268,9 @@ def _process_url(url: str) -> dict:
     # embeds work even when yt-dlp would fail.
     yt_id = _get_youtube_id(url)
     if yt_id:
-        embed_url = f"https://www.youtube.com/embed/{yt_id}?autoplay=1&mute=1&rel=0"
+        # No autoplay and sound on: the user starts playback manually. rel=0
+        # hides the "related videos" sidebar.
+        embed_url = f"https://www.youtube.com/embed/{yt_id}?rel=0"
         return {
             "embed_html": _build_iframe_html(embed_url, title="YouTube video", width=1920, height=1080),
             "metadata": {

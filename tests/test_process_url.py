@@ -213,12 +213,13 @@ class TestYouTubeFastPath:
     def test_watch_url(self):
         result = _process_url("https://www.youtube.com/watch?v=hb5fsQyvFF4")
         assert "error" not in result
-        assert 'src="https://www.youtube.com/embed/hb5fsQyvFF4?autoplay=1&amp;mute=1&amp;rel=0"' in result["embed_html"]
+        assert 'src="https://www.youtube.com/embed/hb5fsQyvFF4?rel=0"' in result["embed_html"]
         assert 'data-ar="16/9"' in result["embed_html"]
+        assert "autoplay=1" not in result["embed_html"], "no autoplay parameter"
 
     def test_youtu_be(self):
         result = _process_url("https://youtu.be/hb5fsQyvFF4")
-        assert 'src="https://www.youtube.com/embed/hb5fsQyvFF4?autoplay=1&amp;mute=1&amp;rel=0"' in result["embed_html"]
+        assert 'src="https://www.youtube.com/embed/hb5fsQyvFF4?rel=0"' in result["embed_html"]
         assert result["metadata"]["stream_url"] == "https://www.youtube.com/watch?v=hb5fsQyvFF4"
 
     def test_shorts(self):

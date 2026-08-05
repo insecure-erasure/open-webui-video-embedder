@@ -19,7 +19,7 @@ For sites with known embed URLs, the tool generates an `<iframe>` pointing to th
 
 Currently mapped: **YouTube** (`youtube.com` / `youtu.be`, handled by URL parsing without yt-dlp).
 
-The YouTube iframe uses `?autoplay=1&mute=1&rel=0` (autoplay requires mute; `rel=0` hides related videos).
+The YouTube iframe uses `?rel=0` (hides related videos). It does **not** autoplay and keeps sound on — the user starts playback manually.
 
 ### ▶️ Direct video embed
 For sites that offer **direct HTTPS MP4** URLs (e.g., Vimeo), the tool generates a `<video>` tag using the highest-resolution MP4 available.
