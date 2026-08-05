@@ -4,7 +4,7 @@ author: Insecure Erasure
 description: Uses yt-dlp to extract video metadata from supported sites and returns a Rich UI embed (HTMLResponse) that Open WebUI renders inline.
 required_open_webui_version: 0.5.0
 requirements: yt-dlp
-version: 0.2.0
+version: 0.3.0
 licence: MIT
 """
 
@@ -12,6 +12,7 @@ import asyncio
 import html
 import logging
 import math
+import re
 
 from pydantic import BaseModel
 from yt_dlp import YoutubeDL
@@ -41,6 +42,24 @@ def _get_embed_url(extractor: str, video_id: str, webpage_url_domain: str | None
     """Return known embed URL for a site, or None."""
     builder = _EMBED_URLS.get(webpage_url_domain or "")
     return builder(video_id) if builder else None
+
+
+# ──────────────────────────────────────────────
+#  YouTube fast-path (no yt-dlp)
+# ──────────────────────────────────────────────
+
+# YouTube's extract_info is unreliable (bot checks / rate limiting can fail
+# even for perfectly embeddable videos), so we build the embed directly from
+# the video ID in the URL — no yt-dlp call needed. yt-dlp stays as a fallback
+# for every other site (and for unrecognizable YouTube URLs).
+
+_YOUTUBE_ID_RE = re.compile(r"(?:youtube\.com|youtu\.be)/(?:watch\?v=|shorts/|embed/|live/|v/)?([A-Za-z0-9_-]{11})")
+
+
+def _get_youtube_id(url: str) -> str | None:
+    """Extract a YouTube video ID directly from the URL (watch, youtu.be, shorts, embed, live)."""
+    m = _YOUTUBE_ID_RE.search(url)
+    return m.group(1) if m else None
 
 
 # ──────────────────────────────────────────────
@@ -236,6 +255,22 @@ def _process_url(url: str) -> dict:
       - metadata: dict with video info
       - error: message if failed
     """
+    # YouTube fast-path: yt-dlp's extract_info is unreliable for YouTube
+    # (bot checks / rate limiting), but the video ID in the URL is enough to
+    # build the official embed iframe. Skipping yt-dlp here makes YouTube
+    # embeds work even when yt-dlp would fail.
+    yt_id = _get_youtube_id(url)
+    if yt_id:
+        embed_url = f"https://www.youtube.com/embed/{yt_id}?autoplay=1&mute=1&rel=0"
+        return {
+            "embed_html": _build_iframe_html(embed_url, title="YouTube video", width=1920, height=1080),
+            "metadata": {
+                "title": f"YouTube video {yt_id}",
+                "webpage_url": url,
+                "stream_url": f"https://www.youtube.com/watch?v={yt_id}",
+            },
+        }
+
     data, err = _run_ytdlp([url])
     if data is None:
         return {"error": err or "Could not extract info from URL"}

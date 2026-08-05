@@ -207,6 +207,38 @@ class TestNoUsableFormats:
         assert result["embed_html"] == ""
 
 
+# ─── Tests: YouTube fast-path (no yt-dlp) ─────────────────────────────────
+
+class TestYouTubeFastPath:
+    def test_watch_url(self):
+        result = _process_url("https://www.youtube.com/watch?v=hb5fsQyvFF4")
+        assert "error" not in result
+        assert 'src="https://www.youtube.com/embed/hb5fsQyvFF4?autoplay=1&amp;mute=1&amp;rel=0"' in result["embed_html"]
+        assert 'data-ar="16/9"' in result["embed_html"]
+
+    def test_youtu_be(self):
+        result = _process_url("https://youtu.be/hb5fsQyvFF4")
+        assert 'src="https://www.youtube.com/embed/hb5fsQyvFF4?autoplay=1&amp;mute=1&amp;rel=0"' in result["embed_html"]
+        assert result["metadata"]["stream_url"] == "https://www.youtube.com/watch?v=hb5fsQyvFF4"
+
+    def test_shorts(self):
+        result = _process_url("https://www.youtube.com/shorts/hb5fsQyvFF4")
+        assert "youtube.com/embed/hb5fsQyvFF4" in result["embed_html"]
+
+    def test_does_not_call_ytdlp(self):
+        with patch("video_embedder._run_ytdlp", side_effect=AssertionError("yt-dlp must not be called for YouTube")) as m:
+            result = _process_url("https://www.youtube.com/watch?v=hb5fsQyvFF4")
+        assert "error" not in result
+        m.assert_not_called()
+
+    def test_unrecognizable_youtube_url_falls_back_to_ytdlp(self):
+        # No ID pattern matched -> falls through to yt-dlp (mocked here)
+        with patch("video_embedder._run_ytdlp", return_value=(None, "HTTP Error 410: Gone")) as m:
+            result = _process_url("https://www.youtube.com/@channel")
+        assert "error" in result
+        m.assert_called_once()
+
+
 # ─── Tests: yt-dlp error ────────────────────────────────────────────────
 
 class TestErrorPath:

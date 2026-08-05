@@ -2,7 +2,39 @@
 
 import pytest
 
-from video_embedder import _format_duration, _get_best_format, _get_best_direct_mp4
+from video_embedder import _format_duration, _get_best_format, _get_best_direct_mp4, _get_youtube_id
+
+
+# ── _get_youtube_id ──────────────────────────────────────────────────────
+
+class TestGetYoutubeId:
+    def test_watch_url(self):
+        assert _get_youtube_id("https://www.youtube.com/watch?v=hb5fsQyvFF4") == "hb5fsQyvFF4"
+
+    def test_watch_url_with_extra_params(self):
+        assert _get_youtube_id("https://www.youtube.com/watch?v=hb5fsQyvFF4&t=30s") == "hb5fsQyvFF4"
+
+    def test_youtu_be_short(self):
+        assert _get_youtube_id("https://youtu.be/hb5fsQyvFF4") == "hb5fsQyvFF4"
+
+    def test_shorts(self):
+        assert _get_youtube_id("https://www.youtube.com/shorts/hb5fsQyvFF4") == "hb5fsQyvFF4"
+
+    def test_embed_url(self):
+        assert _get_youtube_id("https://www.youtube.com/embed/hb5fsQyvFF4") == "hb5fsQyvFF4"
+
+    def test_live_url(self):
+        assert _get_youtube_id("https://www.youtube.com/live/hb5fsQyvFF4") == "hb5fsQyvFF4"
+
+    def test_v_path(self):
+        assert _get_youtube_id("https://www.youtube.com/v/hb5fsQyvFF4") == "hb5fsQyvFF4"
+
+    def test_non_youtube(self):
+        assert _get_youtube_id("https://vimeo.com/1084537") is None
+        assert _get_youtube_id("https://example.com/watch?v=hb5fsQyvFF4") is None
+
+    def test_invalid_id_length(self):
+        assert _get_youtube_id("https://www.youtube.com/watch?v=tooshort") is None
 
 
 # ── _format_duration ──────────────────────────────────────────────────────

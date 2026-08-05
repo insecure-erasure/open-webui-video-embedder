@@ -5,9 +5,10 @@ An [Open WebUI](https://openwebui.com/) tool that uses `yt-dlp` to extract video
 ## How it works
 
 1. You give it one or more video page URLs (e.g., from YouTube, Vimeo, Dailymotion, etc.)
-2. It runs `yt-dlp` under the hood to extract metadata and available formats
-3. It selects the **best quality format** automatically and builds a self-contained player
-4. The tool returns a **Rich UI embed** (`HTMLResponse`) that Open WebUI renders inline in the chat as a sandboxed iframe — the LLM never sees the HTML
+2. **YouTube URLs are handled without yt-dlp**: the video ID is extracted directly from the URL and the official `youtube.com/embed/<id>` iframe is built (yt-dlp's `extract_info` is unreliable for YouTube — bot checks / rate limiting can fail even for embeddable videos).
+3. For every other site it runs `yt-dlp` under the hood to extract metadata and available formats
+4. It selects the **best quality format** automatically and builds a self-contained player
+5. The tool returns a **Rich UI embed** (`HTMLResponse`) that Open WebUI renders inline in the chat as a sandboxed iframe — the LLM never sees the HTML
 
 ## Supported embed modes
 
@@ -16,7 +17,9 @@ The tool picks the best strategy depending on the source site:
 ### 🖼️ Iframe embed
 For sites with known embed URLs, the tool generates an `<iframe>` pointing to the platform's official embed page. No CORS issues.
 
-Currently mapped: **YouTube** (`youtube.com` / `youtu.be`).
+Currently mapped: **YouTube** (`youtube.com` / `youtu.be`, handled by URL parsing without yt-dlp).
+
+The YouTube iframe uses `?autoplay=1&mute=1&rel=0` (autoplay requires mute; `rel=0` hides related videos).
 
 ### ▶️ Direct video embed
 For sites that offer **direct HTTPS MP4** URLs (e.g., Vimeo), the tool generates a `<video>` tag using the highest-resolution MP4 available.
@@ -72,7 +75,7 @@ Open WebUI's middleware detects the `HTMLResponse` (with `Content-Disposition: i
 ## Requirements
 
 - **Python 3.10+**
-- **[yt-dlp](https://github.com/yt-dlp/yt-dlp)** — must be installed and available in `PATH`
+- **[yt-dlp](https://github.com/yt-dlp/yt-dlp)** — must be installed and available in `PATH`. Required for non-YouTube sites; YouTube embeds do **not** use yt-dlp (URL parsing only)
 - Open WebUI (when deploying as a tool)
 
 ### Python dependencies (for development)
