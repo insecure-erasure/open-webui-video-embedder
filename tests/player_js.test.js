@@ -78,13 +78,14 @@ function makeVideo({ videoWidth = 0, videoHeight = 0 } = {}) {
   };
 }
 
-function makeContext({ players = [], clientWidth = 800, availHeight = 800, screenHeight = 800, scrollHeight = 400 } = {}) {
+function makeContext({ players = [], clientWidth = 800, availHeight = 800, screenHeight = 800, scrollHeight = 400, stackHeight = null } = {}) {
   const messages = [];
   const windowListeners = {};
   const globalListeners = {};
   const videos = players
     .filter((p) => p.tag === 'video')
     .map((p) => p.querySelector('video'));
+  const stack = { offsetHeight: stackHeight === null ? null : stackHeight };
 
   const document = {
     documentElement: {
@@ -92,6 +93,10 @@ function makeContext({ players = [], clientWidth = 800, availHeight = 800, scree
       scrollHeight,
     },
     body: { _observed: 0 },
+    getElementById(id) {
+      if (id === 'stack') return stack;
+      return null;
+    },
     querySelectorAll(sel) {
       if (sel === '.player') return players;
       if (sel === 'video') return videos;
@@ -120,6 +125,7 @@ function makeContext({ players = [], clientWidth = 800, availHeight = 800, scree
     __globalListeners: globalListeners,
     __videos: videos,
     __body: document.body,
+    __stack: stack,
   };
 
   return context;
@@ -214,14 +220,22 @@ test('multiple players sized independently', () => {
 });
 
 // --- 5. reportHeight -------------------------------------------------------
-test('reportHeight posts iframe:height with scrollHeight', () => {
+test('reportHeight posts iframe:height with the stack height (not scrollHeight)', () => {
   const player = makePlayer({ tag: 'iframe', ar: '16/9' });
-  const ctx = makeContext({ players: [player], clientWidth: 800, availHeight: 800, scrollHeight: 412 });
+  const ctx = makeContext({ players: [player], clientWidth: 800, availHeight: 800, stackHeight: 482 });
   runPlayerScript(html, ctx);
   const last = ctx.__messages[ctx.__messages.length - 1];
   eq(last.target, '*', 'postMessage target *');
   eq(last.msg.type, 'iframe:height', 'message type');
-  eq(last.msg.height, 412, 'height = document.scrollHeight');
+  eq(last.msg.height, 482, 'height = stack.offsetHeight (content height, hugs the player)');
+});
+
+test('reportHeight falls back to scrollHeight when stack has no height', () => {
+  const player = makePlayer({ tag: 'iframe', ar: '16/9' });
+  const ctx = makeContext({ players: [player], clientWidth: 800, availHeight: 800, stackHeight: 0, scrollHeight: 412 });
+  runPlayerScript(html, ctx);
+  const last = ctx.__messages[ctx.__messages.length - 1];
+  eq(last.msg.height, 412, 'fallback to documentElement.scrollHeight');
 });
 
 // --- 6. event wiring -------------------------------------------------------

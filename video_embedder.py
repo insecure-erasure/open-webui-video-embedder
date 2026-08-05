@@ -178,11 +178,15 @@ def _build_video_html(video_url: str, width: int | None = None, height: int | No
 def _build_player_document(players: list[str]) -> str:
     """Combine `.player` fragments into a self-contained HTML document.
 
-    A single sizing script fits every player to the chat container width
-    (height capped at 65% of the available screen height) and reports the
-    document height to the parent so the iframe hugs the content. Videos
-    are re-fit on `loadedmetadata`/`loadeddata`/`canplay` (real aspect
-    ratio), iframes use their `data-ar` (from yt-dlp metadata, 16/9
+    Sizing follows generate_video (DESIGN.md §6/§10): fit the chat container
+    width, height capped at 65% of the available screen height
+    (screen.availHeight), and reportHeight() posts the STACK's own height
+    (stack.offsetHeight) — never document.scrollHeight, which with
+    html,body{height:100%;overflow:hidden} reflects the iframe's initial
+    ~150px box instead of the content, leaving a narrow embed.
+
+    Videos are re-fit on `loadedmetadata`/`loadeddata`/`canplay` (real
+    aspect ratio), iframes use their `data-ar` (from yt-dlp metadata, 16/9
     fallback).
     """
     joined = "\n".join(players)
@@ -197,16 +201,19 @@ def _build_player_document(players: list[str]) -> str:
 }}
 *{{margin:0;padding:0;box-sizing:border-box}}
 html,body{{height:100%;overflow:hidden;margin:0;padding:0}}
-body{{display:flex;flex-direction:column;align-items:center;gap:16px;padding:16px;background:transparent}}
+body{{display:flex;align-items:center;justify-content:center;padding:16px;background:transparent}}
+#stack{{display:flex;flex-direction:column;align-items:center;gap:16px}}
 .player{{max-width:100%;overflow:hidden;border-radius:12px;background:#000}}
 .player video,.player iframe{{display:block;width:100%;height:100%;border:0;object-fit:contain;border-radius:12px;background:#000}}
 </style>
 </head>
 <body>
+<div id="stack">
 {joined}
+</div>
 <script>
-const players=[...document.querySelectorAll('.player')];
-function reportHeight(){{parent.postMessage({{type:'iframe:height',height:document.documentElement.scrollHeight}},'*')}}
+const players=[...document.querySelectorAll('.player')],stack=document.getElementById('stack');
+function reportHeight(){{parent.postMessage({{type:'iframe:height',height:stack.offsetHeight||document.documentElement.scrollHeight}},'*')}}
 function ratioOf(p){{
   const v=p.querySelector('video');
   if(v&&v.videoWidth>0&&v.videoHeight>0)return v.videoWidth/v.videoHeight;
