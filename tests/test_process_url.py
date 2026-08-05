@@ -251,21 +251,20 @@ class TestYouTubeFastPath:
 # ─── Tests: HTTP error handling (401/403/404/410) ─────────────────────────
 
 class TestHttpErrors:
-    @pytest.mark.parametrize("code,label", [
-        (401, "authentication required"),
-        (403, "forbidden"),
-        (404, "not found"),
-        (410, "gone"),
+    @pytest.mark.parametrize("code,phrase", [
+        (401, "Unauthorized"),
+        (403, "Forbidden"),
+        (404, "Not Found"),
+        (410, "Gone"),
     ])
-    def test_ytdlp_error_with_status(self, code, label):
+    def test_ytdlp_error_with_status(self, code, phrase):
         from video_embedder import _YtDlpError
 
         with patch("video_embedder._run_ytdlp",
                    return_value=(None, _YtDlpError(f"HTTP Error {code}", http_status=code))):
             result = _process_url("https://example.com/video")
         assert "error" in result
-        assert str(code) in result["error"]
-        assert label in result["error"]
+        assert f"HTTP {code} {phrase}" in result["error"]
 
     def test_ytdlp_error_without_status_keeps_raw_message(self):
         # Backwards-compatible: plain string errors (as older mocks do)
@@ -302,6 +301,70 @@ class TestHttpErrors:
             result = _process_url("https://www.youtube.com/watch?v=hb5fsQyvFF4")
         assert "error" not in result
         m.assert_not_called()
+
+
+# ─── Tests: embed_videos responses (informative, no emojis) ───────────────
+
+import asyncio
+
+from fastapi.responses import HTMLResponse
+
+from video_embedder import Tools, _YtDlpError
+
+
+class TestEmbedVideosResponses:
+    def _run(self, tool, urls, *, mock_results):
+        with patch("video_embedder._process_url", side_effect=mock_results):
+            return asyncio.run(tool.embed_videos(urls))
+
+    def test_no_urls(self):
+        tool = Tools()
+        result = self._run(tool, [], mock_results=[])
+        assert result == "embed_videos: no URLs provided"
+        assert not any(ch in result for ch in "❌⚠️✅")
+
+    def test_all_fail_returns_informative_summary(self):
+        tool = Tools()
+        results = [
+            {"error": "HTTP 410 Gone"},
+            {"error": "HTTP 403 Forbidden"},
+        ]
+        urls = ["https://a.example/v1", "https://b.example/v2"]
+        result = self._run(tool, urls, mock_results=results)
+        assert result.startswith("None of the 2 videos could be embedded:")
+        assert "[1] https://a.example/v1: HTTP 410 Gone" in result
+        assert "[2] https://b.example/v2: HTTP 403 Forbidden" in result
+        assert not any(ch in result for ch in "❌⚠️✅")
+
+    def test_all_fail_no_playable_format(self):
+        tool = Tools()
+        results = [{"embed_html": "", "metadata": {}}]
+        result = self._run(tool, ["https://a.example/v1"], mock_results=results)
+        assert "None of the 1 videos could be embedded:" in result
+        assert "no playable format" in result
+
+    def test_partial_success_returns_html_response(self):
+        tool = Tools()
+        results = [
+            {"embed_html": "<div class=\"player\"></div>", "metadata": {}},
+            {"error": "HTTP 404 Not Found"},
+        ]
+        result = self._run(tool, ["https://a.example/v1", "https://b.example/v2"], mock_results=results)
+        assert isinstance(result, HTMLResponse)
+
+    def test_all_succeed_returns_html_response(self):
+        tool = Tools()
+        results = [{"embed_html": "<div class=\"player\"></div>", "metadata": {}}]
+        result = self._run(tool, ["https://a.example/v1"], mock_results=results)
+        assert isinstance(result, HTMLResponse)
+
+    def test_ytdlp_error_object_used_in_summary(self):
+        # _process_url returns the _YtDlpError message in the error string
+        tool = Tools()
+        err = _YtDlpError("HTTP Error 410", http_status=410)
+        results = [{"error": err.message}]
+        result = self._run(tool, ["https://a.example/v1"], mock_results=results)
+        assert "HTTP Error 410" in result
 
 
 # ─── Tests: yt-dlp error ────────────────────────────────────────────────

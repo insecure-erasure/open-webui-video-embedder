@@ -30,13 +30,14 @@ logger = logging.getLogger(__name__)
 #  HTTP error classification
 # ──────────────────────────────────────────────
 
-# HTTP status codes the tool treats as "gone / forbidden / gone" (the video
-# or its CDN stream is not available), mapped to user-facing messages.
+# HTTP status codes the tool surfaces, with their standard HTTP reason
+# phrase (Apache style: "403 Forbidden", "410 Gone"). The agent knows what
+# each code means, so no further explanation is needed.
 _HTTP_STATUS_MESSAGES = {
-    401: "authentication required (401)",
-    403: "forbidden (403) — the provider refuses access",
-    404: "not found (404) — the video no longer exists",
-    410: "gone (410) — the video was removed",
+    401: "Unauthorized",
+    403: "Forbidden",
+    404: "Not Found",
+    410: "Gone",
 }
 
 # How long a stream HEAD check may take before we give up and embed anyway.
@@ -71,10 +72,13 @@ def _classify_http_error(err: Exception) -> int | None:
 
 
 def _http_error_message(status: int | None, fallback: str) -> str:
-    """User-facing message for an HTTP status, falling back to the raw error."""
+    """HTTP error label in Apache style: "HTTP 410 Gone", "HTTP 403 Forbidden"."""
     if status is None:
         return fallback
-    return f"HTTP {status}: {_HTTP_STATUS_MESSAGES.get(status, 'provider rejected the request')}"
+    reason = _HTTP_STATUS_MESSAGES.get(status)
+    if reason:
+        return f"HTTP {status} {reason}"
+    return f"HTTP {status}"
 
 
 
@@ -445,10 +449,13 @@ class Tools:
         middleware's generic message — acknowledge that the video(s) were
         embedded and do not fabricate URLs.
 
+        If no video could be embedded, an informative summary of each
+        failure (per-video reason) is returned instead.
+
         :param urls: One or more video page URLs
         """
         if not urls:
-            return "❌ No URLs provided."
+            return "embed_videos: no URLs provided"
 
         loop = asyncio.get_event_loop()
         results = []
@@ -461,22 +468,46 @@ class Tools:
             result = await loop.run_in_executor(None, _process_url, url)
             results.append(result)
 
-        await self._emit_status(__event_emitter__, "All videos extracted", done=True)
-
         embeds = []
-        for i, r in enumerate(results, 1):
+        failures: list[tuple[int, str, str]] = []
+        for i, (url, r) in enumerate(zip(urls, results), 1):
             if "error" in r:
-                await self._emit_status(__event_emitter__, f"⚠️ Skipped video {i}: {r['error']}")
+                reason = r["error"]
+                failures.append((i, url, reason))
+                await self._emit_status(__event_emitter__, f"Skipped video {i} ({url[:60]}): {reason}")
                 continue
             embed_html = r.get("embed_html", "")
             if not embed_html:
-                await self._emit_status(__event_emitter__, f"⚠️ Skipped video {i}: no playable format found")
+                reason = "no playable format"
+                failures.append((i, url, reason))
+                await self._emit_status(__event_emitter__, f"Skipped video {i} ({url[:60]}): {reason}")
                 continue
             embeds.append(embed_html)
 
         if not embeds:
-            await self._emit_status(__event_emitter__, "❌ None of the videos could be embedded", done=True)
-            return "❌ None of the videos could be embedded."
+            summary = self._build_failure_summary(urls, failures)
+            await self._emit_status(__event_emitter__, "None of the videos could be embedded", done=True)
+            return summary
+
+        if failures:
+            await self._emit_status(
+                __event_emitter__,
+                f"Embedded {len(embeds)} of {len(urls)} videos; skipped {len(failures)}: "
+                + "; ".join(f"video {i}: {reason}" for i, _, reason in failures),
+                done=True,
+            )
+        else:
+            await self._emit_status(
+                __event_emitter__, f"Embedded {len(embeds)} of {len(urls)} videos", done=True
+            )
 
         document = _build_player_document(embeds)
         return HTMLResponse(content=document, headers={"Content-Disposition": "inline"})
+
+    @staticmethod
+    def _build_failure_summary(urls: list[str], failures: list[tuple[int, str, str]]) -> str:
+        """Condensed per-video failure report for the agent (no emojis)."""
+        lines = [f"None of the {len(urls)} videos could be embedded:"]
+        for i, url, reason in failures:
+            lines.append(f"- [{i}] {url}: {reason}")
+        return "\n".join(lines)

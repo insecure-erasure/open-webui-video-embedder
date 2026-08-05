@@ -42,18 +42,18 @@ Provider errors are classified using standard HTTP libraries — nothing is hand
 - **`yt_dlp.networking.exceptions.HTTPError`** (already a yt-dlp dependency) is unwrapped from the `DownloadError` that `extract_info` wraps it in, to recover the real status code (`_classify_http_error` walks the exception cause chain).
 - **`httpx`** performs a `HEAD` request against direct MP4/HLS stream URLs before embedding them (`_verify_stream`).
 
-The tool maps these statuses to specific, user-facing messages:
+The tool surfaces these statuses in Apache style (`<code> <reason phrase>`) — the agent knows what each code means, so no explanation is added:
 
-| Status | Meaning |
+| Status | Label |
 |---|---|
-| `401` | Authentication required |
-| `403` | Forbidden — the provider refuses access |
-| `404` | Not found — the video no longer exists |
-| `410` | Gone — the video was removed |
+| `401` | `HTTP 401 Unauthorized` |
+| `403` | `HTTP 403 Forbidden` |
+| `404` | `HTTP 404 Not Found` |
+| `410` | `HTTP 410 Gone` |
 
 Behavior:
-- A 401/403/404/410 **from yt-dlp** (extracting a page) → the video is skipped with the specific message.
-- A 401/403/404/410 **from a direct stream HEAD** → the embed is not shipped (a dead `<video>` is useless) and the specific message is returned instead.
+- A 401/403/404/410 **from yt-dlp** (extracting a page) → the video is skipped with its `HTTP 4xx Phrase` label.
+- A 401/403/404/410 **from a direct stream HEAD** → the embed is not shipped (a dead `<video>` is useless) and the `HTTP 4xx Phrase` label is returned instead.
 - A **failed HEAD check** (DNS, timeout, network) is NOT treated as a 4xx — the embed proceeds anyway, since an unverifiable stream may still play.
 - **Platform iframes** (e.g. YouTube) and the **YouTube fast-path** skip the stream HEAD entirely: the embed page handles its own errors.
 

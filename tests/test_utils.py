@@ -56,13 +56,13 @@ class TestClassifyHttpError:
 
 class TestHttpErrorMessage:
     def test_known_codes(self):
-        assert "410" in _http_error_message(410, "fallback")
-        assert "removed" in _http_error_message(410, "fallback")
-        assert "forbidden" in _http_error_message(403, "fallback")
+        assert _http_error_message(410, "fallback") == "HTTP 410 Gone"
+        assert _http_error_message(403, "fallback") == "HTTP 403 Forbidden"
+        assert _http_error_message(401, "fallback") == "HTTP 401 Unauthorized"
+        assert _http_error_message(404, "fallback") == "HTTP 404 Not Found"
 
     def test_unknown_code(self):
-        assert "rejected" in _http_error_message(503, "fallback")
-        assert "503" in _http_error_message(503, "fallback")
+        assert _http_error_message(503, "fallback") == "HTTP 503"
 
     def test_none_falls_back(self):
         assert _http_error_message(None, "raw message") == "raw message"
